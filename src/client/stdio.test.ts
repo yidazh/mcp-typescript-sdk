@@ -59,3 +59,33 @@ test("should read messages", async () => {
 
   await client.close();
 });
+
+test("should work with actual node mcp server", async () => {
+  const client = new StdioClientTransport({
+    command: "npx",
+    args: ["-y", "@wrtnlabs/calculator-mcp"],
+  });
+  
+  await client.start();
+  await client.close();
+});
+
+test("should work with actual node mcp server and empty env", async () => {
+  const client = new StdioClientTransport({
+    command: "npx",
+    args: ["-y", "@wrtnlabs/calculator-mcp"],
+    env: {},
+  });
+  await client.start();
+  await client.close();
+});
+
+test("should work with actual node mcp server and custom env", async () => {
+  const client = new StdioClientTransport({
+    command: "npx",
+    args: ["-y", "@wrtnlabs/calculator-mcp"],
+    env: {TEST_VAR: "test-value"},
+  });
+  await client.start();
+  await client.close();
+}); 
