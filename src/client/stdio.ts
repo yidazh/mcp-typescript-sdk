@@ -184,6 +184,10 @@ export class StdioClientTransport implements Transport {
     return this._process?.stderr ?? null;
   }
 
+  get pid(): number | undefined {
+    return this._process?.pid;
+  }
+
   private processReadBuffer() {
     while (true) {
       try {
