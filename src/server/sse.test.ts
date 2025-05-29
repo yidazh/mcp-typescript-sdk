@@ -264,7 +264,7 @@ describe('SSEServerTransport', () => {
         await transport.handlePostMessage(mockReq, mockHandleRes, { jsonrpc: '2.0', method: 'test' });
 
         expect(mockHandleRes.writeHead).toHaveBeenCalledWith(400);
-        expect(mockHandleRes.end).toHaveBeenCalledWith('Error: Content-Type must start with application/json, got: text/plain');
+        expect(mockHandleRes.end).toHaveBeenCalledWith('Error: Unsupported content-type: text/plain');
       });
     });
 
