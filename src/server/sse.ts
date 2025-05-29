@@ -27,7 +27,6 @@ export interface SSEServerTransportOptions {
   
   /**
    * Disable DNS rebinding protection entirely (overrides allowedHosts and allowedOrigins).
-   * Default is false.
    */
   disableDnsRebindingProtection?: boolean;
 }
@@ -156,7 +155,7 @@ export class SSEServerTransport implements Transport {
     try {
       const ct = contentType.parse(req.headers["content-type"] ?? "");
       if (ct.type !== "application/json") {
-        throw new Error(`Unsupported content-type: ${ct.type}`);
+        throw new Error(`Unsupported content-type: ${ct}`);
       }
 
       body = parsedBody ?? await getRawBody(req, {
