@@ -26,9 +26,10 @@ export interface SSEServerTransportOptions {
   allowedOrigins?: string[];
   
   /**
-   * Disable DNS rebinding protection entirely (overrides allowedHosts and allowedOrigins).
+   * Enable DNS rebinding protection (requires allowedHosts and/or allowedOrigins to be configured).
+   * Default is false for backwards compatibility.
    */
-  disableDnsRebindingProtection?: boolean;
+  enableDnsRebindingProtection?: boolean;
 }
 
 /**
@@ -54,7 +55,7 @@ export class SSEServerTransport implements Transport {
     options?: SSEServerTransportOptions,
   ) {
     this._sessionId = randomUUID();
-    this._options = options || {disableDnsRebindingProtection: true};
+    this._options = options || {enableDnsRebindingProtection: false};
   }
 
   /**
@@ -62,8 +63,8 @@ export class SSEServerTransport implements Transport {
    * @returns Error message if validation fails, undefined if validation passes.
    */
   private validateRequestHeaders(req: IncomingMessage): string | undefined {
-    // Skip validation if protection is disabled
-    if (this._options.disableDnsRebindingProtection) {
+    // Skip validation if protection is not enabled
+    if (!this._options.enableDnsRebindingProtection) {
       return undefined;
     }
 

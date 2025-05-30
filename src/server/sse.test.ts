@@ -125,6 +125,7 @@ describe('SSEServerTransport', () => {
         const mockRes = createMockResponse();
         const transport = new SSEServerTransport('/messages', mockRes, {
           allowedHosts: ['localhost:3000', 'example.com'],
+          enableDnsRebindingProtection: true,
         });
         await transport.start();
 
@@ -144,6 +145,7 @@ describe('SSEServerTransport', () => {
         const mockRes = createMockResponse();
         const transport = new SSEServerTransport('/messages', mockRes, {
           allowedHosts: ['localhost:3000'],
+          enableDnsRebindingProtection: true,
         });
         await transport.start();
 
@@ -163,6 +165,7 @@ describe('SSEServerTransport', () => {
         const mockRes = createMockResponse();
         const transport = new SSEServerTransport('/messages', mockRes, {
           allowedHosts: ['localhost:3000'],
+          enableDnsRebindingProtection: true,
         });
         await transport.start();
 
@@ -183,6 +186,7 @@ describe('SSEServerTransport', () => {
         const mockRes = createMockResponse();
         const transport = new SSEServerTransport('/messages', mockRes, {
           allowedOrigins: ['http://localhost:3000', 'https://example.com'],
+          enableDnsRebindingProtection: true,
         });
         await transport.start();
 
@@ -202,6 +206,7 @@ describe('SSEServerTransport', () => {
         const mockRes = createMockResponse();
         const transport = new SSEServerTransport('/messages', mockRes, {
           allowedOrigins: ['http://localhost:3000'],
+          enableDnsRebindingProtection: true,
         });
         await transport.start();
 
@@ -268,13 +273,13 @@ describe('SSEServerTransport', () => {
       });
     });
 
-    describe('disableDnsRebindingProtection option', () => {
-      it('should skip all validations when disableDnsRebindingProtection is true', async () => {
+    describe('enableDnsRebindingProtection option', () => {
+      it('should skip all validations when enableDnsRebindingProtection is false', async () => {
         const mockRes = createMockResponse();
         const transport = new SSEServerTransport('/messages', mockRes, {
           allowedHosts: ['localhost:3000'],
           allowedOrigins: ['http://localhost:3000'],
-          disableDnsRebindingProtection: true,
+          enableDnsRebindingProtection: false,
         });
         await transport.start();
 
@@ -300,6 +305,7 @@ describe('SSEServerTransport', () => {
         const transport = new SSEServerTransport('/messages', mockRes, {
           allowedHosts: ['localhost:3000'],
           allowedOrigins: ['http://localhost:3000'],
+          enableDnsRebindingProtection: true,
         });
         await transport.start();
 

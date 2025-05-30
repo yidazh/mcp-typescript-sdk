@@ -254,7 +254,7 @@ app.post('/mcp', async (req, res) => {
       },
       // DNS rebinding protection is disabled by default for backwards compatibility. If you are running this server
       // locally, make sure to set:
-      // disableDnsRebindingProtection: true,
+      // enableDnsRebindingProtection: true,
       // allowedHosts: ['127.0.0.1'],
     });
 
@@ -399,7 +399,7 @@ The Streamable HTTP transport includes DNS rebinding protection to prevent secur
 ```typescript
 const transport = new StreamableHTTPServerTransport({
   sessionIdGenerator: () => randomUUID(),
-  disableDnsRebindingProtection: false,
+  enableDnsRebindingProtection: true,
 
   allowedHosts: ['127.0.0.1', ...],
   allowedOrigins: ['https://yourdomain.com', 'https://www.yourdomain.com']

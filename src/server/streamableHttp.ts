@@ -75,10 +75,10 @@ export interface StreamableHTTPServerTransportOptions {
   allowedOrigins?: string[];
   
   /**
-   * Disable DNS rebinding protection entirely (overrides allowedHosts and allowedOrigins).
-   * Default is true for backwards compatibility.
+   * Enable DNS rebinding protection (requires allowedHosts and/or allowedOrigins to be configured).
+   * Default is false for backwards compatibility.
    */
-  disableDnsRebindingProtection?: boolean;
+  enableDnsRebindingProtection?: boolean;
 }
 
 /**
@@ -129,7 +129,7 @@ export class StreamableHTTPServerTransport implements Transport {
   private _onsessioninitialized?: (sessionId: string) => void;
   private _allowedHosts?: string[];
   private _allowedOrigins?: string[];
-  private _disableDnsRebindingProtection: boolean;
+  private _enableDnsRebindingProtection: boolean;
 
   sessionId?: string | undefined;
   onclose?: () => void;
@@ -143,7 +143,7 @@ export class StreamableHTTPServerTransport implements Transport {
     this._onsessioninitialized = options.onsessioninitialized;
     this._allowedHosts = options.allowedHosts;
     this._allowedOrigins = options.allowedOrigins;
-    this._disableDnsRebindingProtection = options.disableDnsRebindingProtection ?? true;
+    this._enableDnsRebindingProtection = options.enableDnsRebindingProtection ?? false;
   }
 
   /**
@@ -162,8 +162,8 @@ export class StreamableHTTPServerTransport implements Transport {
    * @returns Error message if validation fails, undefined if validation passes.
    */
   private validateRequestHeaders(req: IncomingMessage): string | undefined {
-    // Skip validation if protection is disabled
-    if (this._disableDnsRebindingProtection) {
+    // Skip validation if protection is not enabled
+    if (!this._enableDnsRebindingProtection) {
       return undefined;
     }
 

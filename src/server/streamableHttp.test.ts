@@ -1312,7 +1312,7 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
       const result = await createTestServerWithDnsProtection({
         sessionIdGenerator: undefined,
         allowedHosts: ['localhost:3001'],
-        disableDnsRebindingProtection: false,
+        enableDnsRebindingProtection: true,
       });
       server = result.server;
       transport = result.transport;
@@ -1338,7 +1338,7 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
       const result = await createTestServerWithDnsProtection({
         sessionIdGenerator: undefined,
         allowedHosts: ['example.com:3001'],
-        disableDnsRebindingProtection: false,
+        enableDnsRebindingProtection: true,
       });
       server = result.server;
       transport = result.transport;
@@ -1362,7 +1362,7 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
       const result = await createTestServerWithDnsProtection({
         sessionIdGenerator: undefined,
         allowedHosts: ['example.com:3001'],
-        disableDnsRebindingProtection: false,
+        enableDnsRebindingProtection: true,
       });
       server = result.server;
       transport = result.transport;
@@ -1384,7 +1384,7 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
       const result = await createTestServerWithDnsProtection({
         sessionIdGenerator: undefined,
         allowedOrigins: ['http://localhost:3000', 'https://example.com'],
-        disableDnsRebindingProtection: false,
+        enableDnsRebindingProtection: true,
       });
       server = result.server;
       transport = result.transport;
@@ -1407,7 +1407,7 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
       const result = await createTestServerWithDnsProtection({
         sessionIdGenerator: undefined,
         allowedOrigins: ['http://localhost:3000'],
-        disableDnsRebindingProtection: false,
+        enableDnsRebindingProtection: true,
       });
       server = result.server;
       transport = result.transport;
@@ -1429,13 +1429,13 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
     });
   });
 
-  describe("disableDnsRebindingProtection option", () => {
-    it("should skip all validations when disableDnsRebindingProtection is true", async () => {
+  describe("enableDnsRebindingProtection option", () => {
+    it("should skip all validations when enableDnsRebindingProtection is false", async () => {
       const result = await createTestServerWithDnsProtection({
         sessionIdGenerator: undefined,
         allowedHosts: ['localhost:3001'],
         allowedOrigins: ['http://localhost:3000'],
-        disableDnsRebindingProtection: true,
+        enableDnsRebindingProtection: false,
       });
       server = result.server;
       transport = result.transport;
@@ -1463,7 +1463,7 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
         sessionIdGenerator: undefined,
         allowedHosts: ['localhost:3001'],
         allowedOrigins: ['http://localhost:3001'],
-        disableDnsRebindingProtection: false,
+        enableDnsRebindingProtection: true,
       });
       server = result.server;
       transport = result.transport;
@@ -1507,7 +1507,7 @@ async function createTestServerWithDnsProtection(config: {
   sessionIdGenerator: (() => string) | undefined;
   allowedHosts?: string[];
   allowedOrigins?: string[];
-  disableDnsRebindingProtection?: boolean;
+  enableDnsRebindingProtection?: boolean;
 }): Promise<{
   server: Server;
   transport: StreamableHTTPServerTransport;
@@ -1523,7 +1523,7 @@ async function createTestServerWithDnsProtection(config: {
     sessionIdGenerator: config.sessionIdGenerator,
     allowedHosts: config.allowedHosts,
     allowedOrigins: config.allowedOrigins,
-    disableDnsRebindingProtection: config.disableDnsRebindingProtection,
+    enableDnsRebindingProtection: config.enableDnsRebindingProtection,
   });
 
   await mcpServer.connect(transport);
