@@ -1,11 +1,25 @@
 import { createServer, type Server, IncomingMessage, ServerResponse } from "node:http";
-import { AddressInfo } from "node:net";
+import { createServer as netCreateServer, AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { EventStore, StreamableHTTPServerTransport, EventId, StreamId } from "./streamableHttp.js";
 import { McpServer } from "./mcp.js";
 import { CallToolResult, JSONRPCMessage } from "../types.js";
 import { z } from "zod";
 import { AuthInfo } from "./auth/types.js";
+
+async function getFreePort() {
+    return new Promise( res => {
+        const srv = netCreateServer();
+        srv.listen(0, () => {
+            const address = srv.address()!
+            if (typeof address === "string") {
+                throw new Error("Unexpected address type: " + typeof address);
+            }
+            const port = (address as AddressInfo).port;
+            srv.close((err) => res(port))
+        });
+    })
+}
 
 /**
  * Test server configuration for StreamableHTTPServerTransport tests
@@ -1441,7 +1455,7 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
     it("should accept requests with allowed host headers", async () => {
       const result = await createTestServerWithDnsProtection({
         sessionIdGenerator: undefined,
-        allowedHosts: ['localhost:3001'],
+        allowedHosts: ['localhost'],
         enableDnsRebindingProtection: true,
       });
       server = result.server;
@@ -1563,7 +1577,7 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
     it("should skip all validations when enableDnsRebindingProtection is false", async () => {
       const result = await createTestServerWithDnsProtection({
         sessionIdGenerator: undefined,
-        allowedHosts: ['localhost:3001'],
+        allowedHosts: ['localhost'],
         allowedOrigins: ['http://localhost:3000'],
         enableDnsRebindingProtection: false,
       });
@@ -1591,7 +1605,7 @@ describe("StreamableHTTPServerTransport DNS rebinding protection", () => {
     it("should validate both host and origin when both are configured", async () => {
       const result = await createTestServerWithDnsProtection({
         sessionIdGenerator: undefined,
-        allowedHosts: ['localhost:3001'],
+        allowedHosts: ['localhost'],
         allowedOrigins: ['http://localhost:3001'],
         enableDnsRebindingProtection: true,
       });
@@ -1649,6 +1663,17 @@ async function createTestServerWithDnsProtection(config: {
     { capabilities: { logging: {} } }
   );
 
+  const port = await getFreePort();
+
+  if (config.allowedHosts) {
+    config.allowedHosts = config.allowedHosts.map(host => {
+      if (host.includes(':')) {
+        return host;
+      }
+      return `localhost:${port}`;
+    });
+  }
+
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: config.sessionIdGenerator,
     allowedHosts: config.allowedHosts,
@@ -1672,10 +1697,9 @@ async function createTestServerWithDnsProtection(config: {
   });
 
   await new Promise<void>((resolve) => {
-    httpServer.listen(3001, () => resolve());
+    httpServer.listen(port, () => resolve());
   });
 
-  const port = (httpServer.address() as AddressInfo).port;
   const serverUrl = new URL(`http://localhost:${port}/`);
 
   return {
