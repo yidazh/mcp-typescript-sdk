@@ -11,6 +11,7 @@
   - [Resources](#resources)
   - [Tools](#tools)
   - [Prompts](#prompts)
+  - [Completions](#completions)
 - [Running Your Server](#running-your-server)
   - [stdio](#stdio)
   - [Streamable HTTP](#streamable-http)
@@ -150,6 +151,33 @@ server.registerResource(
     }]
   })
 );
+
+// Resource with context-aware completion
+server.registerResource(
+  "repository",
+  new ResourceTemplate("github://repos/{owner}/{repo}", {
+    list: undefined,
+    complete: {
+      // Provide intelligent completions based on previously resolved parameters
+      repo: (value, context) => {
+        if (context?.arguments?.["owner"] === "org1") {
+          return ["project1", "project2", "project3"].filter(r => r.startsWith(value));
+        }
+        return ["default-repo"].filter(r => r.startsWith(value));
+      }
+    }
+  }),
+  {
+    title: "GitHub Repository",
+    description: "Repository information"
+  },
+  async (uri, { owner, repo }) => ({
+    contents: [{
+      uri: uri.href,
+      text: `Repository: ${owner}/${repo}`
+    }]
+  })
+);
 ```
 
 ### Tools
@@ -233,12 +261,14 @@ Tools can return `ResourceLink` objects to reference resources without embedding
 Prompts are reusable templates that help LLMs interact with your server effectively:
 
 ```typescript
+import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
+
 server.registerPrompt(
   "review-code",
   {
     title: "Code Review",
     description: "Review code for best practices and potential issues",
-    arguments: { code: z.string() }
+    argsSchema: { code: z.string() }
   },
   ({ code }) => ({
     messages: [{
@@ -250,6 +280,68 @@ server.registerPrompt(
     }]
   })
 );
+
+// Prompt with context-aware completion
+server.registerPrompt(
+  "team-greeting",
+  {
+    title: "Team Greeting",
+    description: "Generate a greeting for team members",
+    argsSchema: {
+      department: completable(z.string(), (value) => {
+        // Department suggestions
+        return ["engineering", "sales", "marketing", "support"].filter(d => d.startsWith(value));
+      }),
+      name: completable(z.string(), (value, context) => {
+        // Name suggestions based on selected department
+        const department = context?.arguments?.["department"];
+        if (department === "engineering") {
+          return ["Alice", "Bob", "Charlie"].filter(n => n.startsWith(value));
+        } else if (department === "sales") {
+          return ["David", "Eve", "Frank"].filter(n => n.startsWith(value));
+        } else if (department === "marketing") {
+          return ["Grace", "Henry", "Iris"].filter(n => n.startsWith(value));
+        }
+        return ["Guest"].filter(n => n.startsWith(value));
+      })
+    }
+  },
+  ({ department, name }) => ({
+    messages: [{
+      role: "assistant",
+      content: {
+        type: "text",
+        text: `Hello ${name}, welcome to the ${department} team!`
+      }
+    }]
+  })
+);
+```
+
+### Completions
+
+MCP supports argument completions to help users fill in prompt arguments and resource template parameters. See the examples above for [resource completions](#resources) and [prompt completions](#prompts).
+
+#### Client Usage
+
+```typescript
+// Request completions for any argument
+const result = await client.complete({
+  ref: {
+    type: "ref/prompt",  // or "ref/resource"
+    name: "example"      // or uri: "template://..."
+  },
+  argument: {
+    name: "argumentName",
+    value: "partial"     // What the user has typed so far
+  },
+  context: {             // Optional: Include previously resolved arguments
+    arguments: {
+      previousArg: "value"
+    }
+  }
+});
+
 ```
 
 ### Display Names and Metadata
@@ -772,6 +864,109 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 ```
 
+### Eliciting User Input
+
+MCP servers can request additional information from users through the elicitation feature. This is useful for interactive workflows where the server needs user input or confirmation:
+
+```typescript
+// Server-side: Restaurant booking tool that asks for alternatives
+server.tool(
+  "book-restaurant",
+  { 
+    restaurant: z.string(),
+    date: z.string(),
+    partySize: z.number()
+  },
+  async ({ restaurant, date, partySize }) => {
+    // Check availability
+    const available = await checkAvailability(restaurant, date, partySize);
+    
+    if (!available) {
+      // Ask user if they want to try alternative dates
+      const result = await server.server.elicitInput({
+        message: `No tables available at ${restaurant} on ${date}. Would you like to check alternative dates?`,
+        requestedSchema: {
+          type: "object",
+          properties: {
+            checkAlternatives: {
+              type: "boolean",
+              title: "Check alternative dates",
+              description: "Would you like me to check other dates?"
+            },
+            flexibleDates: {
+              type: "string",
+              title: "Date flexibility",
+              description: "How flexible are your dates?",
+              enum: ["next_day", "same_week", "next_week"],
+              enumNames: ["Next day", "Same week", "Next week"]
+            }
+          },
+          required: ["checkAlternatives"]
+        }
+      });
+
+      if (result.action === "accept" && result.content?.checkAlternatives) {
+        const alternatives = await findAlternatives(
+          restaurant, 
+          date, 
+          partySize, 
+          result.content.flexibleDates as string
+        );
+        return {
+          content: [{
+            type: "text",
+            text: `Found these alternatives: ${alternatives.join(", ")}`
+          }]
+        };
+      }
+      
+      return {
+        content: [{
+          type: "text",
+          text: "No booking made. Original date not available."
+        }]
+      };
+    }
+    
+    // Book the table
+    await makeBooking(restaurant, date, partySize);
+    return {
+      content: [{
+        type: "text",
+        text: `Booked table for ${partySize} at ${restaurant} on ${date}`
+      }]
+    };
+  }
+);
+```
+
+Client-side: Handle elicitation requests
+
+```typescript
+// This is a placeholder - implement based on your UI framework
+async function getInputFromUser(message: string, schema: any): Promise<{
+  action: "accept" | "decline" | "cancel";
+  data?: Record<string, any>;
+}> {
+  // This should be implemented depending on the app
+  throw new Error("getInputFromUser must be implemented for your platform");
+}
+
+client.setRequestHandler(ElicitRequestSchema, async (request) => {
+  const userResponse = await getInputFromUser(
+    request.params.message, 
+    request.params.requestedSchema
+  );
+  
+  return {
+    action: userResponse.action,
+    content: userResponse.action === "accept" ? userResponse.data : undefined
+  };
+});
+```
+
+**Note**: Elicitation requires client support. Clients must declare the `elicitation` capability during initialization.
+
 ### Writing MCP Clients
 
 The SDK provides a high-level client interface:
@@ -820,6 +1015,7 @@ const result = await client.callTool({
     arg1: "value"
   }
 });
+
 ```
 
 ### Proxy Authorization Requests Upstream
