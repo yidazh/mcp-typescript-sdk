@@ -2,7 +2,7 @@ import pkceChallenge from "pkce-challenge";
 import { LATEST_PROTOCOL_VERSION } from "../types.js";
 import type { OAuthClientMetadata, OAuthClientInformation, OAuthTokens, OAuthMetadata, OAuthClientInformationFull, OAuthProtectedResourceMetadata } from "../shared/auth.js";
 import { OAuthClientInformationFullSchema, OAuthMetadataSchema, OAuthProtectedResourceMetadataSchema, OAuthTokensSchema } from "../shared/auth.js";
-import { resourceUrlFromServerUrl } from "../shared/auth-utils.js";
+import { checkResourceAllowed, resourceUrlFromServerUrl } from "../shared/auth-utils.js";
 
 /**
  * Implements an end-to-end OAuth client to be used with one MCP server.
@@ -198,13 +198,13 @@ export async function auth(
 }
 
 async function selectResourceURL(serverUrl: string| URL, provider: OAuthClientProvider, resourceMetadata?: OAuthProtectedResourceMetadata): Promise<URL | undefined> {
+  const resource = resourceUrlFromServerUrl(serverUrl);
   if (provider.validateResourceURL) {
-    return await provider.validateResourceURL(serverUrl, resourceMetadata?.resource);
-  }
-
-  const resource = resourceUrlFromServerUrl(typeof serverUrl === "string" ? new URL(serverUrl) : serverUrl);
-  if (resourceMetadata && resourceMetadata.resource !== resource.href) {
-    throw new Error(`Protected resource ${resourceMetadata.resource} does not match expected ${resource}`);
+    return await provider.validateResourceURL(resource, resourceMetadata?.resource);
+  } else if (resourceMetadata) {
+    if (!checkResourceAllowed({ requestedResource: resource, configuredResource: resourceMetadata.resource })) {
+      throw new Error(`Protected resource ${resourceMetadata.resource} does not match expected ${resource} (or origin)`);
+    }
   }
 
   return resource;

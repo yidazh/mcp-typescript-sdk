@@ -1041,7 +1041,7 @@ describe("OAuth Authorization", () => {
 
       // Verify custom validation method was called
       expect(mockValidateResourceURL).toHaveBeenCalledWith(
-        "https://api.example.com/mcp-server",
+        new URL("https://api.example.com/mcp-server"),
         "https://different-resource.example.com/mcp-server"
       );
     });
