@@ -197,12 +197,15 @@ export async function auth(
   return "REDIRECT";
 }
 
-async function selectResourceURL(serverUrl: string| URL, provider: OAuthClientProvider, resourceMetadata?: OAuthProtectedResourceMetadata): Promise<URL | undefined> {
-  const resource = resourceUrlFromServerUrl(serverUrl);
+export async function selectResourceURL(serverUrl: string| URL, provider: OAuthClientProvider, resourceMetadata?: OAuthProtectedResourceMetadata): Promise<URL | undefined> {
+  let resource = resourceUrlFromServerUrl(serverUrl);
   if (provider.validateResourceURL) {
     return await provider.validateResourceURL(resource, resourceMetadata?.resource);
   } else if (resourceMetadata) {
-    if (!checkResourceAllowed({ requestedResource: resource, configuredResource: resourceMetadata.resource })) {
+    if (checkResourceAllowed({ requestedResource: resource, configuredResource: resourceMetadata.resource })) {
+      // If the resource mentioned in metadata is valid, prefer it since it is what the server is telling us to request.
+      resource = new URL(resourceMetadata.resource);
+    } else {
       throw new Error(`Protected resource ${resourceMetadata.resource} does not match expected ${resource} (or origin)`);
     }
   }
