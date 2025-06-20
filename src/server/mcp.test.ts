@@ -1248,8 +1248,7 @@ describe("tool()", () => {
           processedInput: input,
           resultType: "structured",
           // Missing required 'timestamp' field
-          someExtraField: "unexpected" // Extra field not in schema
-        },
+        } as unknown as { processedInput: string; resultType: string; timestamp: string }, // Type assertion to bypass TypeScript validation for testing purposes
       })
     );
 
