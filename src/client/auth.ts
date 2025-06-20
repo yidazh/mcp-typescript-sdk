@@ -116,8 +116,8 @@ export async function auth(
     if (resourceMetadata.authorization_servers && resourceMetadata.authorization_servers.length > 0) {
       authorizationServerUrl = resourceMetadata.authorization_servers[0];
     }
-  } catch (error) {
-    console.warn("Could not load OAuth Protected Resource metadata, falling back to /.well-known/oauth-authorization-server", error)
+  } catch {
+    // Ignore errors and fall back to /.well-known/oauth-authorization-server
   }
 
   const resource: URL | undefined = await selectResourceURL(serverUrl, provider, resourceMetadata);
@@ -175,8 +175,8 @@ export async function auth(
 
       await provider.saveTokens(newTokens);
       return "AUTHORIZED";
-    } catch (error) {
-      console.error("Could not refresh OAuth tokens:", error);
+    } catch {
+      // Could not refresh OAuth tokens
     }
   }
 
@@ -222,7 +222,6 @@ export function extractResourceMetadataUrl(res: Response): URL | undefined {
 
   const [type, scheme] = authenticateHeader.split(' ');
   if (type.toLowerCase() !== 'bearer' || !scheme) {
-    console.log("Invalid WWW-Authenticate header format, expected 'Bearer'");
     return undefined;
   }
   const regex = /resource_metadata="([^"]*)"/;
@@ -235,7 +234,6 @@ export function extractResourceMetadataUrl(res: Response): URL | undefined {
   try {
     return new URL(match[1]);
   } catch {
-    console.log("Invalid resource metadata url: ", match[1]);
     return undefined;
   }
 }
