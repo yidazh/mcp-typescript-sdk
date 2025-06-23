@@ -207,6 +207,24 @@ describe("OAuth Authorization", () => {
       });
     });
 
+    it("returns metadata when discovery succeeds with path", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validMetadata,
+      });
+
+      const metadata = await discoverOAuthMetadata("https://auth.example.com/path/name");
+      expect(metadata).toEqual(validMetadata);
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1);
+      const [url, options] = calls[0];
+      expect(url.toString()).toBe("https://auth.example.com/.well-known/oauth-authorization-server/path/name");
+      expect(options.headers).toEqual({
+        "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION
+      });
+    });
+
     it("returns metadata when first fetch fails but second without MCP header succeeds", async () => {
       // Set up a counter to control behavior
       let callCount = 0;
