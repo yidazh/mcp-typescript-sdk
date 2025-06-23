@@ -297,7 +297,9 @@ export async function discoverOAuthMetadata(
   authorizationServerUrl: string | URL,
   opts?: { protocolVersion?: string },
 ): Promise<OAuthMetadata | undefined> {
-  const url = new URL("/.well-known/oauth-authorization-server", authorizationServerUrl);
+  const wellKnownPath = `/.well-known/oauth-authorization-server${issuer.pathname}`;
+  const url = new URL(wellKnownPath, authorizationServerUrl);
+
   let response: Response;
   try {
     response = await fetch(url, {
