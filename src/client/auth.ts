@@ -299,8 +299,12 @@ export async function discoverOAuthMetadata(
 ): Promise<OAuthMetadata | undefined> {
   const issuer = new URL(authorizationServerUrl);
 
-  const wellKnownPath = `/.well-known/oauth-authorization-server${issuer.pathname}`;
-  const url = new URL(wellKnownPath, authorizationServerUrl);
+  let wellKnownPath = `/.well-known/oauth-authorization-server${issuer.pathname}`;
+  if (issuer.pathname.endsWith('/')) {
+    // Strip trailing slash from pathname
+    wellKnownPath = wellKnownPath.slice(0, -1);
+  }
+  const url = new URL(wellKnownPath, issuer);
 
   let response: Response;
   try {
