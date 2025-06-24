@@ -5,13 +5,15 @@ import { McpServer } from '../../server/mcp.js';
 import { StreamableHTTPServerTransport } from '../../server/streamableHttp.js';
 import { getOAuthProtectedResourceMetadataUrl, mcpAuthMetadataRouter } from '../../server/auth/router.js';
 import { requireBearerAuth } from '../../server/auth/middleware/bearerAuth.js';
-import { CallToolResult, GetPromptResult, isInitializeRequest, ReadResourceResult, ResourceLink } from '../../types.js';
+import { CallToolResult, GetPromptResult, isInitializeRequest, PrimitiveSchemaDefinition, ReadResourceResult, ResourceLink } from '../../types.js';
 import { InMemoryEventStore } from '../shared/inMemoryEventStore.js';
 import { setupAuthServer } from './demoInMemoryOAuthProvider.js';
 import { OAuthMetadata } from 'src/shared/auth.js';
+import { checkResourceAllowed } from 'src/shared/auth-utils.js';
 
 // Check for OAuth flag
 const useOAuth = process.argv.includes('--oauth');
+const strictOAuth = process.argv.includes('--oauth-strict');
 
 // Create an MCP server with implementation details
 const getServer = () => {
@@ -84,6 +86,155 @@ const getServer = () => {
           }
         ],
       };
+    }
+  );
+  // Register a tool that demonstrates elicitation (user input collection)
+  // This creates a closure that captures the server instance
+  server.tool(
+    'collect-user-info',
+    'A tool that collects user information through elicitation',
+    {
+      infoType: z.enum(['contact', 'preferences', 'feedback']).describe('Type of information to collect'),
+    },
+    async ({ infoType }): Promise<CallToolResult> => {
+      let message: string;
+      let requestedSchema: {
+        type: 'object';
+        properties: Record<string, PrimitiveSchemaDefinition>;
+        required?: string[];
+      };
+
+      switch (infoType) {
+        case 'contact':
+          message = 'Please provide your contact information';
+          requestedSchema = {
+            type: 'object',
+            properties: {
+              name: {
+                type: 'string',
+                title: 'Full Name',
+                description: 'Your full name',
+              },
+              email: {
+                type: 'string',
+                title: 'Email Address',
+                description: 'Your email address',
+                format: 'email',
+              },
+              phone: {
+                type: 'string',
+                title: 'Phone Number',
+                description: 'Your phone number (optional)',
+              },
+            },
+            required: ['name', 'email'],
+          };
+          break;
+        case 'preferences':
+          message = 'Please set your preferences';
+          requestedSchema = {
+            type: 'object',
+            properties: {
+              theme: {
+                type: 'string',
+                title: 'Theme',
+                description: 'Choose your preferred theme',
+                enum: ['light', 'dark', 'auto'],
+                enumNames: ['Light', 'Dark', 'Auto'],
+              },
+              notifications: {
+                type: 'boolean',
+                title: 'Enable Notifications',
+                description: 'Would you like to receive notifications?',
+                default: true,
+              },
+              frequency: {
+                type: 'string',
+                title: 'Notification Frequency',
+                description: 'How often would you like notifications?',
+                enum: ['daily', 'weekly', 'monthly'],
+                enumNames: ['Daily', 'Weekly', 'Monthly'],
+              },
+            },
+            required: ['theme'],
+          };
+          break;
+        case 'feedback':
+          message = 'Please provide your feedback';
+          requestedSchema = {
+            type: 'object',
+            properties: {
+              rating: {
+                type: 'integer',
+                title: 'Rating',
+                description: 'Rate your experience (1-5)',
+                minimum: 1,
+                maximum: 5,
+              },
+              comments: {
+                type: 'string',
+                title: 'Comments',
+                description: 'Additional comments (optional)',
+                maxLength: 500,
+              },
+              recommend: {
+                type: 'boolean',
+                title: 'Would you recommend this?',
+                description: 'Would you recommend this to others?',
+              },
+            },
+            required: ['rating', 'recommend'],
+          };
+          break;
+        default:
+          throw new Error(`Unknown info type: ${infoType}`);
+      }
+
+      try {
+        // Use the underlying server instance to elicit input from the client
+        const result = await server.server.elicitInput({
+          message,
+          requestedSchema,
+        });
+
+        if (result.action === 'accept') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Thank you! Collected ${infoType} information: ${JSON.stringify(result.content, null, 2)}`,
+              },
+            ],
+          };
+        } else if (result.action === 'reject') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `No information was collected. User rejected ${infoType} information request.`,
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Information collection was cancelled by the user.`,
+              },
+            ],
+          };
+        }
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error collecting ${infoType} information: ${error}`,
+            },
+          ],
+        };
+      }
     }
   );
 
@@ -178,10 +329,10 @@ const getServer = () => {
   server.registerResource(
     'example-file-1',
     'file:///example/file1.txt',
-    { 
+    {
       title: 'Example File 1',
       description: 'First example file for ResourceLink demonstration',
-      mimeType: 'text/plain' 
+      mimeType: 'text/plain'
     },
     async (): Promise<ReadResourceResult> => {
       return {
@@ -198,10 +349,10 @@ const getServer = () => {
   server.registerResource(
     'example-file-2',
     'file:///example/file2.txt',
-    { 
+    {
       title: 'Example File 2',
       description: 'Second example file for ResourceLink demonstration',
-      mimeType: 'text/plain' 
+      mimeType: 'text/plain'
     },
     async (): Promise<ReadResourceResult> => {
       return {
@@ -279,10 +430,10 @@ app.use(express.json());
 let authMiddleware = null;
 if (useOAuth) {
   // Create auth middleware for MCP endpoints
-  const mcpServerUrl = new URL(`http://localhost:${MCP_PORT}`);
+  const mcpServerUrl = new URL(`http://localhost:${MCP_PORT}/mcp`);
   const authServerUrl = new URL(`http://localhost:${AUTH_PORT}`);
 
-  const oauthMetadata: OAuthMetadata = setupAuthServer(authServerUrl);
+  const oauthMetadata: OAuthMetadata = setupAuthServer({authServerUrl, mcpServerUrl, strictResource: strictOAuth});
 
   const tokenVerifier = {
     verifyAccessToken: async (token: string) => {
@@ -309,6 +460,15 @@ if (useOAuth) {
 
       const data = await response.json();
 
+      if (strictOAuth) {
+        if (!data.aud) {
+          throw new Error(`Resource Indicator (RFC8707) missing`);
+        }
+        if (!checkResourceAllowed({ requestedResource: data.aud, configuredResource: mcpServerUrl })) {
+          throw new Error(`Expected resource indicator ${mcpServerUrl}, got: ${data.aud}`);
+        }
+      }
+
       // Convert the response to AuthInfo format
       return {
         token,
@@ -328,7 +488,7 @@ if (useOAuth) {
 
   authMiddleware = requireBearerAuth({
     verifier: tokenVerifier,
-    requiredScopes: ['mcp:tools'],
+    requiredScopes: [],
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpServerUrl),
   });
 }
