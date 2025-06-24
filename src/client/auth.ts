@@ -198,19 +198,24 @@ export async function auth(
 }
 
 export async function selectResourceURL(serverUrl: string| URL, provider: OAuthClientProvider, resourceMetadata?: OAuthProtectedResourceMetadata): Promise<URL | undefined> {
-  let resource = resourceUrlFromServerUrl(serverUrl);
+  const defaultResource = resourceUrlFromServerUrl(serverUrl);
+
+  // If provider has custom validation, delegate to it
   if (provider.validateResourceURL) {
-    return await provider.validateResourceURL(resource, resourceMetadata?.resource);
-  } else if (resourceMetadata) {
-    if (checkResourceAllowed({ requestedResource: resource, configuredResource: resourceMetadata.resource })) {
-      // If the resource mentioned in metadata is valid, prefer it since it is what the server is telling us to request.
-      resource = new URL(resourceMetadata.resource);
-    } else {
-      throw new Error(`Protected resource ${resourceMetadata.resource} does not match expected ${resource} (or origin)`);
-    }
+    return await provider.validateResourceURL(defaultResource, resourceMetadata?.resource);
   }
 
-  return resource;
+  // Only include resource parameter when Protected Resource Metadata is present
+  if (!resourceMetadata) {
+    return undefined;
+  }
+
+  // Validate that the metadata's resource is compatible with our request
+  if (!checkResourceAllowed({ requestedResource: defaultResource, configuredResource: resourceMetadata.resource })) {
+    throw new Error(`Protected resource ${resourceMetadata.resource} does not match expected ${defaultResource} (or origin)`);
+  }
+  // Prefer the resource from metadata since it's what the server is telling us to request
+  return new URL(resourceMetadata.resource);
 }
 
 /**
@@ -360,7 +365,7 @@ export async function discoverOAuthMetadata(
     try {
       const rootUrl = new URL("/.well-known/oauth-authorization-server", issuer);
       response = await tryMetadataDiscovery(rootUrl, protocolVersion);
-      
+
       if (response.status === 404) {
         return undefined;
       }
