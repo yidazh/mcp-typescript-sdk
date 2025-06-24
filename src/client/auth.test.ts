@@ -225,6 +225,126 @@ describe("OAuth Authorization", () => {
       });
     });
 
+    it("falls back to root discovery when path-aware discovery returns 404", async () => {
+      // First call (path-aware) returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+      
+      // Second call (root fallback) succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validMetadata,
+      });
+
+      const metadata = await discoverOAuthMetadata("https://auth.example.com/path/name");
+      expect(metadata).toEqual(validMetadata);
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(2);
+      
+      // First call should be path-aware
+      const [firstUrl, firstOptions] = calls[0];
+      expect(firstUrl.toString()).toBe("https://auth.example.com/.well-known/oauth-authorization-server/path/name");
+      expect(firstOptions.headers).toEqual({
+        "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION
+      });
+      
+      // Second call should be root fallback
+      const [secondUrl, secondOptions] = calls[1];
+      expect(secondUrl.toString()).toBe("https://auth.example.com/.well-known/oauth-authorization-server");
+      expect(secondOptions.headers).toEqual({
+        "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION
+      });
+    });
+
+    it("returns undefined when both path-aware and root discovery return 404", async () => {
+      // First call (path-aware) returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+      
+      // Second call (root fallback) also returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      const metadata = await discoverOAuthMetadata("https://auth.example.com/path/name");
+      expect(metadata).toBeUndefined();
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(2);
+    });
+
+    it("does not fallback when the original URL is already at root path", async () => {
+      // First call (path-aware for root) returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      const metadata = await discoverOAuthMetadata("https://auth.example.com/");
+      expect(metadata).toBeUndefined();
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1); // Should not attempt fallback
+      
+      const [url] = calls[0];
+      expect(url.toString()).toBe("https://auth.example.com/.well-known/oauth-authorization-server");
+    });
+
+    it("does not fallback when the original URL has no path", async () => {
+      // First call (path-aware for no path) returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      const metadata = await discoverOAuthMetadata("https://auth.example.com");
+      expect(metadata).toBeUndefined();
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1); // Should not attempt fallback
+      
+      const [url] = calls[0];
+      expect(url.toString()).toBe("https://auth.example.com/.well-known/oauth-authorization-server");
+    });
+
+    it("falls back when path-aware discovery encounters CORS error", async () => {
+      // First call (path-aware) fails with TypeError (CORS)
+      mockFetch.mockImplementationOnce(() => Promise.reject(new TypeError("CORS error")));
+      
+      // Retry path-aware without headers (simulating CORS retry)
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+      
+      // Second call (root fallback) succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validMetadata,
+      });
+
+      const metadata = await discoverOAuthMetadata("https://auth.example.com/deep/path");
+      expect(metadata).toEqual(validMetadata);
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(3);
+      
+      // Final call should be root fallback
+      const [lastUrl, lastOptions] = calls[2];
+      expect(lastUrl.toString()).toBe("https://auth.example.com/.well-known/oauth-authorization-server");
+      expect(lastOptions.headers).toEqual({
+        "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION
+      });
+    });
+
     it("returns metadata when first fetch fails but second without MCP header succeeds", async () => {
       // Set up a counter to control behavior
       let callCount = 0;

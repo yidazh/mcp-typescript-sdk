@@ -293,36 +293,82 @@ export async function discoverOAuthProtectedResourceMetadata(
  * If the server returns a 404 for the well-known endpoint, this function will
  * return `undefined`. Any other errors will be thrown as exceptions.
  */
+/**
+ * Helper function to handle fetch with CORS retry logic
+ */
+async function fetchWithCorsRetry(
+  url: URL,
+  headers: Record<string, string>,
+): Promise<Response> {
+  try {
+    return await fetch(url, { headers });
+  } catch (error) {
+    // CORS errors come back as TypeError, retry without headers
+    if (error instanceof TypeError) {
+      return await fetch(url);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Constructs the well-known path for OAuth metadata discovery
+ */
+function buildWellKnownPath(pathname: string): string {
+  let wellKnownPath = `/.well-known/oauth-authorization-server${pathname}`;
+  if (pathname.endsWith('/')) {
+    // Strip trailing slash from pathname to avoid double slashes
+    wellKnownPath = wellKnownPath.slice(0, -1);
+  }
+  return wellKnownPath;
+}
+
+/**
+ * Tries to discover OAuth metadata at a specific URL
+ */
+async function tryMetadataDiscovery(
+  url: URL,
+  protocolVersion: string,
+): Promise<Response> {
+  const headers = {
+    "MCP-Protocol-Version": protocolVersion
+  };
+  return await fetchWithCorsRetry(url, headers);
+}
+
+/**
+ * Determines if fallback to root discovery should be attempted
+ */
+function shouldAttemptFallback(response: Response, pathname: string): boolean {
+  return response.status === 404 && pathname !== '/';
+}
+
 export async function discoverOAuthMetadata(
   authorizationServerUrl: string | URL,
   opts?: { protocolVersion?: string },
 ): Promise<OAuthMetadata | undefined> {
   const issuer = new URL(authorizationServerUrl);
+  const protocolVersion = opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION;
 
-  let wellKnownPath = `/.well-known/oauth-authorization-server${issuer.pathname}`;
-  if (issuer.pathname.endsWith('/')) {
-    // Strip trailing slash from pathname
-    wellKnownPath = wellKnownPath.slice(0, -1);
-  }
-  const url = new URL(wellKnownPath, issuer);
+  // Try path-aware discovery first (RFC 8414 compliant)
+  const wellKnownPath = buildWellKnownPath(issuer.pathname);
+  const pathAwareUrl = new URL(wellKnownPath, issuer);
+  let response = await tryMetadataDiscovery(pathAwareUrl, protocolVersion);
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      headers: {
-        "MCP-Protocol-Version": opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION
+  // If path-aware discovery fails with 404, try fallback to root discovery
+  if (shouldAttemptFallback(response, issuer.pathname)) {
+    try {
+      const rootUrl = new URL("/.well-known/oauth-authorization-server", issuer);
+      response = await tryMetadataDiscovery(rootUrl, protocolVersion);
+      
+      if (response.status === 404) {
+        return undefined;
       }
-    });
-  } catch (error) {
-    // CORS errors come back as TypeError
-    if (error instanceof TypeError) {
-      response = await fetch(url);
-    } else {
-      throw error;
+    } catch {
+      // If fallback fails, return undefined
+      return undefined;
     }
-  }
-
-  if (response.status === 404) {
+  } else if (response.status === 404) {
     return undefined;
   }
 
