@@ -22,7 +22,7 @@ export interface MessageExtraInfo {
   /**
    * The request information.
    */
-  requestInfo: RequestInfo;
+  requestInfo?: RequestInfo;
 
   /**
    * The authentication information.
