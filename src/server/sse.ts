@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Transport } from "../shared/transport.js";
-import { JSONRPCMessage, JSONRPCMessageSchema } from "../types.js";
+import { JSONRPCMessage, JSONRPCMessageSchema, MessageExtraInfo, RequestInfo } from "../types.js";
 import getRawBody from "raw-body";
 import contentType from "content-type";
 import { AuthInfo } from "./auth/types.js";
@@ -19,7 +19,7 @@ export class SSEServerTransport implements Transport {
   private _sessionId: string;
   onclose?: () => void;
   onerror?: (error: Error) => void;
-  onmessage?: (message: JSONRPCMessage, extra?: { authInfo?: AuthInfo }) => void;
+  onmessage?: (message: JSONRPCMessage, extra?: MessageExtraInfo) => void;
 
   /**
    * Creates a new SSE server transport, which will direct the client to POST messages to the relative or absolute URL identified by `_endpoint`.
@@ -86,6 +86,7 @@ export class SSEServerTransport implements Transport {
       throw new Error(message);
     }
     const authInfo: AuthInfo | undefined = req.auth;
+    const requestInfo: RequestInfo = { headers: req.headers };
 
     let body: string | unknown;
     try {
@@ -105,7 +106,7 @@ export class SSEServerTransport implements Transport {
     }
 
     try {
-      await this.handleMessage(typeof body === 'string' ? JSON.parse(body) : body, { authInfo });
+      await this.handleMessage(typeof body === 'string' ? JSON.parse(body) : body, { requestInfo, authInfo });
     } catch {
       res.writeHead(400).end(`Invalid message: ${body}`);
       return;
@@ -117,7 +118,7 @@ export class SSEServerTransport implements Transport {
   /**
    * Handle a client message, regardless of how it arrived. This can be used to inform the server of messages that arrive via a means different than HTTP POST.
    */
-  async handleMessage(message: unknown, extra?: { authInfo?: AuthInfo }): Promise<void> {
+  async handleMessage(message: unknown, extra?: MessageExtraInfo): Promise<void> {
     let parsedMessage: JSONRPCMessage;
     try {
       parsedMessage = JSONRPCMessageSchema.parse(message);
