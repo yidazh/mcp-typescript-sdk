@@ -1,11 +1,10 @@
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Transport } from "../shared/transport.js";
-import { isInitializeRequest, isJSONRPCError, isJSONRPCRequest, isJSONRPCResponse, JSONRPCMessage, JSONRPCMessageSchema, RequestId, SUPPORTED_PROTOCOL_VERSIONS, DEFAULT_NEGOTIATED_PROTOCOL_VERSION } from "../types.js";
+import { MessageExtraInfo, RequestInfo, isInitializeRequest, isJSONRPCError, isJSONRPCRequest, isJSONRPCResponse, JSONRPCMessage, JSONRPCMessageSchema, RequestId, SUPPORTED_PROTOCOL_VERSIONS, DEFAULT_NEGOTIATED_PROTOCOL_VERSION } from "../types.js";
 import getRawBody from "raw-body";
 import contentType from "content-type";
 import { randomUUID } from "node:crypto";
 import { AuthInfo } from "./auth/types.js";
-import { MessageExtraInfo, RequestInfo } from "./types/types.js";
 
 const MAXIMUM_MESSAGE_SIZE = "4mb";
 

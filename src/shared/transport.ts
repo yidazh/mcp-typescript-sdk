@@ -1,5 +1,4 @@
-import { MessageExtraInfo } from "../server/types/types.js";
-import { JSONRPCMessage, RequestId } from "../types.js";
+import { JSONRPCMessage, MessageExtraInfo, RequestId } from "../types.js";
 
 /**
  * Options for sending a JSON-RPC message.

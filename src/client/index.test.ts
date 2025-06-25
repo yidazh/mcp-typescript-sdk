@@ -21,14 +21,7 @@ import {
 import { Transport } from "../shared/transport.js";
 import { Server } from "../server/index.js";
 import { InMemoryTransport } from "../inMemory.js";
-import { RequestInfo } from "../server/types/types.js";
 
-const mockRequestInfo: RequestInfo = {
-  headers: {
-    'content-type': 'application/json',
-    'accept': 'application/json',
-  },
-};
 /***
  * Test: Initialize with Matching Protocol Version
  */
@@ -50,7 +43,7 @@ test("should initialize with matching protocol version", async () => {
             },
             instructions: "test instructions",
           },
-        }, { requestInfo: mockRequestInfo });
+        });
       }
       return Promise.resolve();
     }),
@@ -108,7 +101,7 @@ test("should initialize with supported older protocol version", async () => {
               version: "1.0",
             },
           },
-        }, { requestInfo: mockRequestInfo });
+        });
       }
       return Promise.resolve();
     }),
@@ -158,7 +151,7 @@ test("should reject unsupported protocol version", async () => {
               version: "1.0",
             },
           },
-        }, { requestInfo: mockRequestInfo });
+        });
       }
       return Promise.resolve();
     }),

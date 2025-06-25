@@ -232,7 +232,7 @@ describe('SSEServerTransport', () => {
       );
     });
 
-     /***
+  /**
    * Test: Tool With Request Info
    */
   it("should pass request info to tool callback", async () => {
