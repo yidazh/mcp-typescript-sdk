@@ -393,7 +393,7 @@ import {CreateMessageResult} from "@modelcontextprotocol/sdk/types.js";
 
 // Async Function to send a sampling request to the LLM at top-level
 async function samplingExample(server: McpServer): Promise<CreateMessageResult> {	
-  const samplingText = "Text prompt to send to LLM";
+  const samplingText = "Example Sampling Prompt";
   const result = await McpServer.server.createMessage(
     {
       messages : [{
