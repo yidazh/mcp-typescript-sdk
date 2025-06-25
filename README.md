@@ -508,7 +508,7 @@ app.listen(3000);
 > ```ts
 > app.use(
 >   cors({
->     origin: '*',
+>     origin: ['https://your-remote-domain.com, https://your-other-remote-domain.com'],
 >     exposedHeaders: ['mcp-session-id'],
 >     allowedHeaders: ['Content-Type', 'mcp-session-id'],
 >   })
