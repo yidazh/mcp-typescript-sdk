@@ -1,9 +1,10 @@
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Transport } from "../shared/transport.js";
-import { isInitializeRequest, isJSONRPCError, isJSONRPCRequest, isJSONRPCResponse, JSONRPCMessage, JSONRPCMessageSchema, RequestId } from "../types.js";
+import { MessageExtraInfo, RequestInfo, isInitializeRequest, isJSONRPCError, isJSONRPCRequest, isJSONRPCResponse, JSONRPCMessage, JSONRPCMessageSchema, RequestId, SUPPORTED_PROTOCOL_VERSIONS, DEFAULT_NEGOTIATED_PROTOCOL_VERSION } from "../types.js";
 import getRawBody from "raw-body";
 import contentType from "content-type";
 import { randomUUID } from "node:crypto";
+import { AuthInfo } from "./auth/types.js";
 
 const MAXIMUM_MESSAGE_SIZE = "4mb";
 
@@ -93,7 +94,7 @@ export interface StreamableHTTPServerTransportOptions {
  * - State is maintained in-memory (connections, message history)
  * 
  * In stateless mode:
- * - Session ID is only included in initialization responses
+ * - No Session ID is included in any responses
  * - No session validation is performed
  */
 export class StreamableHTTPServerTransport implements Transport {
@@ -109,10 +110,10 @@ export class StreamableHTTPServerTransport implements Transport {
   private _eventStore?: EventStore;
   private _onsessioninitialized?: (sessionId: string) => void;
 
-  sessionId?: string | undefined;
+  sessionId?: string;
   onclose?: () => void;
   onerror?: (error: Error) => void;
-  onmessage?: (message: JSONRPCMessage) => void;
+  onmessage?: (message: JSONRPCMessage, extra?: MessageExtraInfo) => void;
 
   constructor(options: StreamableHTTPServerTransportOptions) {
     this.sessionIdGenerator = options.sessionIdGenerator;
@@ -135,7 +136,7 @@ export class StreamableHTTPServerTransport implements Transport {
   /**
    * Handles an incoming HTTP request, whether GET or POST
    */
-  async handleRequest(req: IncomingMessage, res: ServerResponse, parsedBody?: unknown): Promise<void> {
+  async handleRequest(req: IncomingMessage & { auth?: AuthInfo }, res: ServerResponse, parsedBody?: unknown): Promise<void> {
     if (req.method === "POST") {
       await this.handlePostRequest(req, res, parsedBody);
     } else if (req.method === "GET") {
@@ -166,9 +167,12 @@ export class StreamableHTTPServerTransport implements Transport {
     }
 
     // If an Mcp-Session-Id is returned by the server during initialization,
-    // clients using the Streamable HTTP transport MUST include it 
+    // clients using the Streamable HTTP transport MUST include it
     // in the Mcp-Session-Id header on all of their subsequent HTTP requests.
     if (!this.validateSession(req, res)) {
+      return;
+    }
+    if (!this.validateProtocolVersion(req, res)) {
       return;
     }
     // Handle resumability: check for Last-Event-ID header
@@ -180,7 +184,7 @@ export class StreamableHTTPServerTransport implements Transport {
       }
     }
 
-    // The server MUST either return Content-Type: text/event-stream in response to this HTTP GET, 
+    // The server MUST either return Content-Type: text/event-stream in response to this HTTP GET,
     // or else return HTTP 405 Method Not Allowed
     const headers: Record<string, string> = {
       "Content-Type": "text/event-stream",
@@ -286,7 +290,7 @@ export class StreamableHTTPServerTransport implements Transport {
   /**
    * Handles POST requests containing JSON-RPC messages
    */
-  private async handlePostRequest(req: IncomingMessage, res: ServerResponse, parsedBody?: unknown): Promise<void> {
+  private async handlePostRequest(req: IncomingMessage & { auth?: AuthInfo }, res: ServerResponse, parsedBody?: unknown): Promise<void> {
     try {
       // Validate the Accept header
       const acceptHeader = req.headers.accept;
@@ -315,6 +319,9 @@ export class StreamableHTTPServerTransport implements Transport {
         }));
         return;
       }
+
+      const authInfo: AuthInfo | undefined = req.auth;
+      const requestInfo: RequestInfo = { headers: req.headers };
 
       let rawMessage;
       if (parsedBody !== undefined) {
@@ -375,11 +382,17 @@ export class StreamableHTTPServerTransport implements Transport {
         }
 
       }
-      // If an Mcp-Session-Id is returned by the server during initialization,
-      // clients using the Streamable HTTP transport MUST include it 
-      // in the Mcp-Session-Id header on all of their subsequent HTTP requests.
-      if (!isInitializationRequest && !this.validateSession(req, res)) {
-        return;
+      if (!isInitializationRequest) {
+        // If an Mcp-Session-Id is returned by the server during initialization,
+        // clients using the Streamable HTTP transport MUST include it 
+        // in the Mcp-Session-Id header on all of their subsequent HTTP requests.
+        if (!this.validateSession(req, res)) {
+          return;
+        }
+        // Mcp-Protocol-Version header is required for all requests after initialization.
+        if (!this.validateProtocolVersion(req, res)) {
+          return;
+        }
       }
 
 
@@ -392,7 +405,7 @@ export class StreamableHTTPServerTransport implements Transport {
 
         // handle each message
         for (const message of messages) {
-          this.onmessage?.(message);
+          this.onmessage?.(message, { authInfo, requestInfo });
         }
       } else if (hasRequests) {
         // The default behavior is to use SSE streaming
@@ -427,7 +440,7 @@ export class StreamableHTTPServerTransport implements Transport {
 
         // handle each message
         for (const message of messages) {
-          this.onmessage?.(message);
+          this.onmessage?.(message, { authInfo, requestInfo });
         }
         // The server SHOULD NOT close the SSE stream before sending all JSON-RPC responses
         // This will be handled by the send() method when responses are ready
@@ -452,6 +465,9 @@ export class StreamableHTTPServerTransport implements Transport {
    */
   private async handleDeleteRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!this.validateSession(req, res)) {
+      return;
+    }
+    if (!this.validateProtocolVersion(req, res)) {
       return;
     }
     await this.close();
@@ -521,6 +537,25 @@ export class StreamableHTTPServerTransport implements Transport {
     return true;
   }
 
+  private validateProtocolVersion(req: IncomingMessage, res: ServerResponse): boolean {
+    let protocolVersion = req.headers["mcp-protocol-version"] ?? DEFAULT_NEGOTIATED_PROTOCOL_VERSION;
+    if (Array.isArray(protocolVersion)) {
+      protocolVersion = protocolVersion[protocolVersion.length - 1];
+    }
+
+    if (!SUPPORTED_PROTOCOL_VERSIONS.includes(protocolVersion)) {
+      res.writeHead(400).end(JSON.stringify({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: `Bad Request: Unsupported protocol version (supported versions: ${SUPPORTED_PROTOCOL_VERSIONS.join(", ")})`
+        },
+        id: null
+      }));
+      return false;
+    }
+    return true;
+  }
 
   async close(): Promise<void> {
     // Close all SSE connections
@@ -587,7 +622,7 @@ export class StreamableHTTPServerTransport implements Transport {
       }
     }
 
-    if (isJSONRPCResponse(message)) {
+    if (isJSONRPCResponse(message) || isJSONRPCError(message)) {
       this._requestResponseMap.set(requestId, message);
       const relatedIds = Array.from(this._requestToStreamMapping.entries())
         .filter(([_, streamId]) => this._streamMapping.get(streamId) === response)
