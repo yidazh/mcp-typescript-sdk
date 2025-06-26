@@ -469,8 +469,10 @@ describe('SSEServerTransport', () => {
         await transport.start();
 
         const mockReq = createMockRequest({
-          host: 'localhost:3000',
-          'content-type': 'application/json',
+          headers: {
+            host: 'localhost:3000',
+            'content-type': 'application/json',
+          }
         });
         const mockHandleRes = createMockResponse();
 
@@ -489,8 +491,10 @@ describe('SSEServerTransport', () => {
         await transport.start();
 
         const mockReq = createMockRequest({
-          host: 'evil.com',
-          'content-type': 'application/json',
+          headers: {
+            host: 'evil.com',
+            'content-type': 'application/json',
+          }
         });
         const mockHandleRes = createMockResponse();
 
@@ -509,7 +513,9 @@ describe('SSEServerTransport', () => {
         await transport.start();
 
         const mockReq = createMockRequest({
-          'content-type': 'application/json',
+          headers: {
+            'content-type': 'application/json',
+          }
         });
         const mockHandleRes = createMockResponse();
 
@@ -530,8 +536,10 @@ describe('SSEServerTransport', () => {
         await transport.start();
 
         const mockReq = createMockRequest({
-          origin: 'http://localhost:3000',
-          'content-type': 'application/json',
+          headers: {
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          }
         });
         const mockHandleRes = createMockResponse();
 
@@ -550,8 +558,10 @@ describe('SSEServerTransport', () => {
         await transport.start();
 
         const mockReq = createMockRequest({
-          origin: 'http://evil.com',
-          'content-type': 'application/json',
+          headers: {
+            origin: 'http://evil.com',
+            'content-type': 'application/json',
+          }
         });
         const mockHandleRes = createMockResponse();
 
@@ -569,7 +579,9 @@ describe('SSEServerTransport', () => {
         await transport.start();
 
         const mockReq = createMockRequest({
-          'content-type': 'application/json',
+          headers: {
+            'content-type': 'application/json',
+          }
         });
         const mockHandleRes = createMockResponse();
 
@@ -585,7 +597,9 @@ describe('SSEServerTransport', () => {
         await transport.start();
 
         const mockReq = createMockRequest({
-          'content-type': 'application/json; charset=utf-8',
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+          }
         });
         const mockHandleRes = createMockResponse();
 
@@ -601,7 +615,9 @@ describe('SSEServerTransport', () => {
         await transport.start();
 
         const mockReq = createMockRequest({
-          'content-type': 'text/plain',
+          headers: {
+            'content-type': 'text/plain',
+          }
         });
         const mockHandleRes = createMockResponse();
 
@@ -623,9 +639,11 @@ describe('SSEServerTransport', () => {
         await transport.start();
 
         const mockReq = createMockRequest({
-          host: 'evil.com',
-          origin: 'http://evil.com',
-          'content-type': 'text/plain',
+          headers: {
+            host: 'evil.com',
+            origin: 'http://evil.com',
+            'content-type': 'text/plain',
+          }
         });
         const mockHandleRes = createMockResponse();
 
@@ -650,9 +668,11 @@ describe('SSEServerTransport', () => {
 
         // Valid host, invalid origin
         const mockReq1 = createMockRequest({
-          host: 'localhost:3000',
-          origin: 'http://evil.com',
-          'content-type': 'application/json',
+          headers: {
+            host: 'localhost:3000',
+            origin: 'http://evil.com',
+            'content-type': 'application/json',
+          }
         });
         const mockHandleRes1 = createMockResponse();
 
@@ -663,9 +683,11 @@ describe('SSEServerTransport', () => {
 
         // Invalid host, valid origin
         const mockReq2 = createMockRequest({
-          host: 'evil.com',
-          origin: 'http://localhost:3000',
-          'content-type': 'application/json',
+          headers: {
+            host: 'evil.com',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          }
         });
         const mockHandleRes2 = createMockResponse();
 
@@ -676,9 +698,11 @@ describe('SSEServerTransport', () => {
 
         // Both valid
         const mockReq3 = createMockRequest({
-          host: 'localhost:3000',
-          origin: 'http://localhost:3000',
-          'content-type': 'application/json',
+          headers: {
+            host: 'localhost:3000',
+            origin: 'http://localhost:3000',
+            'content-type': 'application/json',
+          }
         });
         const mockHandleRes3 = createMockResponse();
 
