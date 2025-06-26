@@ -14,7 +14,7 @@ import {
   LoggingMessageNotificationSchema,
   Notification,
   TextContent,
-  ElicitRequestSchema,
+  ElicitRequestSchema
 } from "../types.js";
 import { ResourceTemplate } from "./mcp.js";
 import { completable } from "./completable.js";
@@ -1202,6 +1202,68 @@ describe("tool()", () => {
         },
       }),
     ).rejects.toThrow(/Tool test has an output schema but no structured content was provided/);
+  });
+  /***
+   * Test: Tool with Output Schema Must Provide Structured Content
+   */
+  test("should skip outputSchema validation when isError is true", async () => {
+    const mcpServer = new McpServer({
+      name: "test server",
+      version: "1.0",
+    });
+
+    const client = new Client({
+      name: "test client",
+      version: "1.0",
+    });
+
+    mcpServer.registerTool(
+      "test",
+      {
+        description: "Test tool with output schema but missing structured content",
+        inputSchema: {
+          input: z.string(),
+        },
+        outputSchema: {
+          processedInput: z.string(),
+          resultType: z.string(),
+        },
+      },
+      async ({ input }) => ({
+        content: [
+          {
+            type: "text",
+            text: `Processed: ${input}`,
+          },
+        ],
+        isError: true,
+      })
+    );
+
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      client.connect(clientTransport),
+      mcpServer.server.connect(serverTransport),
+    ]);
+
+    await expect(
+      client.callTool({
+        name: "test",
+        arguments: {
+          input: "hello",
+        },
+      }),
+    ).resolves.toStrictEqual({
+      content: [
+        {
+          type: "text",
+          text: `Processed: hello`,
+        },
+      ],
+      isError: true,
+    });
   });
 
   /***
@@ -4157,7 +4219,7 @@ describe("elicitInput()", () => {
     // Mock availability check to return false
     checkAvailability.mockResolvedValue(false);
 
-    // Set up client to decline alternative date checking
+    // Set up client to reject alternative date checking
     client.setRequestHandler(ElicitRequestSchema, async () => {
       return {
         action: "accept",

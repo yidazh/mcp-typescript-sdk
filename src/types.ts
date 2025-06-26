@@ -1,4 +1,5 @@
 import { z, ZodTypeAny } from "zod";
+import { AuthInfo } from "./server/auth/types.js";
 
 export const LATEST_PROTOCOL_VERSION = "2025-06-18";
 export const DEFAULT_NEGOTIATED_PROTOCOL_VERSION = "2025-03-26";
@@ -1237,7 +1238,7 @@ export const ElicitResultSchema = ResultSchema.extend({
   /**
    * The user's response action.
    */
-  action: z.enum(["accept", "decline", "cancel"]),
+  action: z.enum(["accept", "reject", "cancel"]),
   /**
    * The collected user input content (only present if action is "accept").
    */
@@ -1462,6 +1463,36 @@ type Flatten<T> = T extends Primitive
   : T;
 
 type Infer<Schema extends ZodTypeAny> = Flatten<z.infer<Schema>>;
+
+/**
+ * Headers that are compatible with both Node.js and the browser.
+ */
+export type IsomorphicHeaders = Record<string, string | string[] | undefined>;
+
+/**
+ * Information about the incoming request.
+ */
+export interface RequestInfo {
+  /**
+   * The headers of the request.
+   */
+  headers: IsomorphicHeaders;
+}
+
+/**
+ * Extra information about a message.
+ */
+export interface MessageExtraInfo {
+  /**
+   * The request information.
+   */
+  requestInfo?: RequestInfo;
+
+  /**
+   * The authentication information.
+   */
+  authInfo?: AuthInfo;
+}
 
 /* JSON-RPC types */
 export type ProgressToken = Infer<typeof ProgressTokenSchema>;
