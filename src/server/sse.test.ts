@@ -418,7 +418,12 @@ describe('SSEServerTransport', () => {
       }, {
         authInfo: {
           token: 'test-token',
-        }
+        },
+        requestInfo: {
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
       });
     });
   });
