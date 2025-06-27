@@ -8,17 +8,17 @@ import { z } from "zod";
 import { AuthInfo } from "./auth/types.js";
 
 async function getFreePort() {
-    return new Promise( res => {
-        const srv = netCreateServer();
-        srv.listen(0, () => {
-            const address = srv.address()!
-            if (typeof address === "string") {
-                throw new Error("Unexpected address type: " + typeof address);
-            }
-            const port = (address as AddressInfo).port;
-            srv.close((err) => res(port))
-        });
-    })
+  return new Promise(res => {
+    const srv = netCreateServer();
+    srv.listen(0, () => {
+      const address = srv.address()!
+      if (typeof address === "string") {
+        throw new Error("Unexpected address type: " + typeof address);
+      }
+      const port = (address as AddressInfo).port;
+      srv.close((_err) => res(port))
+    });
+  })
 }
 
 /**
@@ -377,7 +377,7 @@ describe("StreamableHTTPServerTransport", () => {
         return { content: [{ type: "text", text: `Hello, ${name}!` }, { type: "text", text: `${JSON.stringify(requestInfo)}` }] };
       }
     );
-   
+
     const toolCallMessage: JSONRPCMessage = {
       jsonrpc: "2.0",
       method: "tools/call",
@@ -828,7 +828,7 @@ describe("StreamableHTTPServerTransport", () => {
 
       // Send request with matching protocol version
       const response = await sendPostRequest(baseUrl, TEST_MESSAGES.toolsList, sessionId);
-      
+
       expect(response.status).toBe(200);
     });
 
@@ -846,7 +846,7 @@ describe("StreamableHTTPServerTransport", () => {
         },
         body: JSON.stringify(TEST_MESSAGES.toolsList),
       });
-      
+
       expect(response.status).toBe(200);
     });
 
@@ -864,7 +864,7 @@ describe("StreamableHTTPServerTransport", () => {
         },
         body: JSON.stringify(TEST_MESSAGES.toolsList),
       });
-      
+
       expect(response.status).toBe(400);
       const errorData = await response.json();
       expectErrorResponse(errorData, -32000, /Bad Request: Unsupported protocol version \(supported versions: .+\)/);
@@ -872,13 +872,13 @@ describe("StreamableHTTPServerTransport", () => {
 
     it("should accept when protocol version differs from negotiated version", async () => {
       sessionId = await initializeServer();
-      
+
       // Spy on console.warn to verify warning is logged
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       // Send request with different but supported protocol version
       const response = await fetch(baseUrl, {
-        method: "POST", 
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json, text/event-stream",
@@ -887,10 +887,10 @@ describe("StreamableHTTPServerTransport", () => {
         },
         body: JSON.stringify(TEST_MESSAGES.toolsList),
       });
-      
+
       // Request should still succeed
       expect(response.status).toBe(200);
-      
+
       warnSpy.mockRestore();
     });
 
@@ -906,7 +906,7 @@ describe("StreamableHTTPServerTransport", () => {
           "mcp-protocol-version": "invalid-version",
         },
       });
-      
+
       expect(response.status).toBe(400);
       const errorData = await response.json();
       expectErrorResponse(errorData, -32000, /Bad Request: Unsupported protocol version \(supported versions: .+\)/);
@@ -923,7 +923,7 @@ describe("StreamableHTTPServerTransport", () => {
           "mcp-protocol-version": "invalid-version",
         },
       });
-      
+
       expect(response.status).toBe(400);
       const errorData = await response.json();
       expectErrorResponse(errorData, -32000, /Bad Request: Unsupported protocol version \(supported versions: .+\)/);
@@ -965,12 +965,12 @@ describe("StreamableHTTPServerTransport with AuthInfo", () => {
       method: "tools/call",
       params: {
         name: "profile",
-        arguments: {active: true},
+        arguments: { active: true },
       },
       id: "call-1",
     };
 
-    const response = await sendPostRequest(baseUrl, toolCallMessage, sessionId, {'authorization': 'Bearer test-token'});
+    const response = await sendPostRequest(baseUrl, toolCallMessage, sessionId, { 'authorization': 'Bearer test-token' });
     expect(response.status).toBe(200);
 
     const text = await readSSEEvent(response);
@@ -992,7 +992,7 @@ describe("StreamableHTTPServerTransport with AuthInfo", () => {
       id: "call-1",
     });
   });
-  
+
   it("should calls tool without authInfo when it is optional", async () => {
     sessionId = await initializeServer();
 
@@ -1001,7 +1001,7 @@ describe("StreamableHTTPServerTransport with AuthInfo", () => {
       method: "tools/call",
       params: {
         name: "profile",
-        arguments: {active: false},
+        arguments: { active: false },
       },
       id: "call-1",
     };
@@ -1485,7 +1485,7 @@ describe("StreamableHTTPServerTransport in stateless mode", () => {
     // Open first SSE stream
     const stream1 = await fetch(baseUrl, {
       method: "GET",
-      headers: { 
+      headers: {
         Accept: "text/event-stream",
         "mcp-protocol-version": "2025-03-26"
       },
@@ -1495,7 +1495,7 @@ describe("StreamableHTTPServerTransport in stateless mode", () => {
     // Open second SSE stream - should still be rejected, stateless mode still only allows one
     const stream2 = await fetch(baseUrl, {
       method: "GET",
-      headers: { 
+      headers: {
         Accept: "text/event-stream",
         "mcp-protocol-version": "2025-03-26"
       },
