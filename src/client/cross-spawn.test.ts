@@ -73,8 +73,8 @@ describe("StdioClientTransport using cross-spawn", () => {
       [],
       expect.objectContaining({
         env: {
+          ...getDefaultEnvironment(),
           ...customEnv,
-          ...getDefaultEnvironment()
         }
       })
     );
