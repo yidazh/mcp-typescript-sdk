@@ -9,6 +9,7 @@ import { CallToolResult, GetPromptResult, isInitializeRequest, PrimitiveSchemaDe
 import { InMemoryEventStore } from '../shared/inMemoryEventStore.js';
 import { setupAuthServer } from './demoInMemoryOAuthProvider.js';
 import { OAuthMetadata } from 'src/shared/auth.js';
+import { checkResourceAllowed } from 'src/shared/auth-utils.js';
 
 // Check for OAuth flag
 const useOAuth = process.argv.includes('--oauth');
@@ -463,7 +464,7 @@ if (useOAuth) {
         if (!data.aud) {
           throw new Error(`Resource Indicator (RFC8707) missing`);
         }
-        if (data.aud !== mcpServerUrl.href) {
+        if (!checkResourceAllowed({ requestedResource: data.aud, configuredResource: mcpServerUrl })) {
           throw new Error(`Expected resource indicator ${mcpServerUrl}, got: ${data.aud}`);
         }
       }
@@ -497,15 +498,13 @@ const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 
 // MCP POST endpoint with optional auth
 const mcpPostHandler = async (req: Request, res: Response) => {
-  console.log('Received MCP request:', req.body);
+  const sessionId = req.headers['mcp-session-id'] as string | undefined;
+  console.log(sessionId? `Received MCP request for session: ${sessionId}`: 'Received MCP request:', req.body);
   if (useOAuth && req.auth) {
     console.log('Authenticated user:', req.auth);
   }
   try {
-    // Check for existing session ID
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
     let transport: StreamableHTTPServerTransport;
-
     if (sessionId && transports[sessionId]) {
       // Reuse existing transport
       transport = transports[sessionId];

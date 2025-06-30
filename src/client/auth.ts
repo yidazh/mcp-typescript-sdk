@@ -2,7 +2,7 @@ import pkceChallenge from "pkce-challenge";
 import { LATEST_PROTOCOL_VERSION } from "../types.js";
 import type { OAuthClientMetadata, OAuthClientInformation, OAuthTokens, OAuthMetadata, OAuthClientInformationFull, OAuthProtectedResourceMetadata } from "../shared/auth.js";
 import { OAuthClientInformationFullSchema, OAuthMetadataSchema, OAuthProtectedResourceMetadataSchema, OAuthTokensSchema } from "../shared/auth.js";
-import { resourceUrlFromServerUrl } from "../shared/auth-utils.js";
+import { checkResourceAllowed, resourceUrlFromServerUrl } from "../shared/auth-utils.js";
 
 /**
  * Implements an end-to-end OAuth client to be used with one MCP server.
@@ -116,8 +116,8 @@ export async function auth(
     if (resourceMetadata.authorization_servers && resourceMetadata.authorization_servers.length > 0) {
       authorizationServerUrl = resourceMetadata.authorization_servers[0];
     }
-  } catch (error) {
-    console.warn("Could not load OAuth Protected Resource metadata, falling back to /.well-known/oauth-authorization-server", error)
+  } catch {
+    // Ignore errors and fall back to /.well-known/oauth-authorization-server
   }
 
   const resource: URL | undefined = await selectResourceURL(serverUrl, provider, resourceMetadata);
@@ -175,8 +175,8 @@ export async function auth(
 
       await provider.saveTokens(newTokens);
       return "AUTHORIZED";
-    } catch (error) {
-      console.error("Could not refresh OAuth tokens:", error);
+    } catch {
+      // Could not refresh OAuth tokens
     }
   }
 
@@ -197,17 +197,25 @@ export async function auth(
   return "REDIRECT";
 }
 
-async function selectResourceURL(serverUrl: string| URL, provider: OAuthClientProvider, resourceMetadata?: OAuthProtectedResourceMetadata): Promise<URL | undefined> {
+export async function selectResourceURL(serverUrl: string| URL, provider: OAuthClientProvider, resourceMetadata?: OAuthProtectedResourceMetadata): Promise<URL | undefined> {
+  const defaultResource = resourceUrlFromServerUrl(serverUrl);
+
+  // If provider has custom validation, delegate to it
   if (provider.validateResourceURL) {
-    return await provider.validateResourceURL(serverUrl, resourceMetadata?.resource);
+    return await provider.validateResourceURL(defaultResource, resourceMetadata?.resource);
   }
 
-  const resource = resourceUrlFromServerUrl(typeof serverUrl === "string" ? new URL(serverUrl) : serverUrl);
-  if (resourceMetadata && resourceMetadata.resource !== resource.href) {
-    throw new Error(`Protected resource ${resourceMetadata.resource} does not match expected ${resource}`);
+  // Only include resource parameter when Protected Resource Metadata is present
+  if (!resourceMetadata) {
+    return undefined;
   }
 
-  return resource;
+  // Validate that the metadata's resource is compatible with our request
+  if (!checkResourceAllowed({ requestedResource: defaultResource, configuredResource: resourceMetadata.resource })) {
+    throw new Error(`Protected resource ${resourceMetadata.resource} does not match expected ${defaultResource} (or origin)`);
+  }
+  // Prefer the resource from metadata since it's what the server is telling us to request
+  return new URL(resourceMetadata.resource);
 }
 
 /**
@@ -222,7 +230,6 @@ export function extractResourceMetadataUrl(res: Response): URL | undefined {
 
   const [type, scheme] = authenticateHeader.split(' ');
   if (type.toLowerCase() !== 'bearer' || !scheme) {
-    console.log("Invalid WWW-Authenticate header format, expected 'Bearer'");
     return undefined;
   }
   const regex = /resource_metadata="([^"]*)"/;
@@ -235,7 +242,6 @@ export function extractResourceMetadataUrl(res: Response): URL | undefined {
   try {
     return new URL(match[1]);
   } catch {
-    console.log("Invalid resource metadata url: ", match[1]);
     return undefined;
   }
 }
@@ -292,28 +298,82 @@ export async function discoverOAuthProtectedResourceMetadata(
  * If the server returns a 404 for the well-known endpoint, this function will
  * return `undefined`. Any other errors will be thrown as exceptions.
  */
+/**
+ * Helper function to handle fetch with CORS retry logic
+ */
+async function fetchWithCorsRetry(
+  url: URL,
+  headers: Record<string, string>,
+): Promise<Response> {
+  try {
+    return await fetch(url, { headers });
+  } catch (error) {
+    // CORS errors come back as TypeError, retry without headers
+    if (error instanceof TypeError) {
+      return await fetch(url);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Constructs the well-known path for OAuth metadata discovery
+ */
+function buildWellKnownPath(pathname: string): string {
+  let wellKnownPath = `/.well-known/oauth-authorization-server${pathname}`;
+  if (pathname.endsWith('/')) {
+    // Strip trailing slash from pathname to avoid double slashes
+    wellKnownPath = wellKnownPath.slice(0, -1);
+  }
+  return wellKnownPath;
+}
+
+/**
+ * Tries to discover OAuth metadata at a specific URL
+ */
+async function tryMetadataDiscovery(
+  url: URL,
+  protocolVersion: string,
+): Promise<Response> {
+  const headers = {
+    "MCP-Protocol-Version": protocolVersion
+  };
+  return await fetchWithCorsRetry(url, headers);
+}
+
+/**
+ * Determines if fallback to root discovery should be attempted
+ */
+function shouldAttemptFallback(response: Response, pathname: string): boolean {
+  return response.status === 404 && pathname !== '/';
+}
+
 export async function discoverOAuthMetadata(
   authorizationServerUrl: string | URL,
   opts?: { protocolVersion?: string },
 ): Promise<OAuthMetadata | undefined> {
-  const url = new URL("/.well-known/oauth-authorization-server", authorizationServerUrl);
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      headers: {
-        "MCP-Protocol-Version": opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION
-      }
-    });
-  } catch (error) {
-    // CORS errors come back as TypeError
-    if (error instanceof TypeError) {
-      response = await fetch(url);
-    } else {
-      throw error;
-    }
-  }
+  const issuer = new URL(authorizationServerUrl);
+  const protocolVersion = opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION;
 
-  if (response.status === 404) {
+  // Try path-aware discovery first (RFC 8414 compliant)
+  const wellKnownPath = buildWellKnownPath(issuer.pathname);
+  const pathAwareUrl = new URL(wellKnownPath, issuer);
+  let response = await tryMetadataDiscovery(pathAwareUrl, protocolVersion);
+
+  // If path-aware discovery fails with 404, try fallback to root discovery
+  if (shouldAttemptFallback(response, issuer.pathname)) {
+    try {
+      const rootUrl = new URL("/.well-known/oauth-authorization-server", issuer);
+      response = await tryMetadataDiscovery(rootUrl, protocolVersion);
+
+      if (response.status === 404) {
+        return undefined;
+      }
+    } catch {
+      // If fallback fails, return undefined
+      return undefined;
+    }
+  } else if (response.status === 404) {
     return undefined;
   }
 

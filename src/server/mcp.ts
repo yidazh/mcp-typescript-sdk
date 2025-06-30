@@ -200,7 +200,7 @@ export class McpServer {
           }
         }
 
-        if (tool.outputSchema) {
+        if (tool.outputSchema && !result.isError) {
           if (!result.structuredContent) {
             throw new McpError(
               ErrorCode.InvalidParams,
@@ -613,6 +613,18 @@ export class McpServer {
    * Registers a resource with a config object and callback.
    * For static resources, use a URI string. For dynamic resources, use a ResourceTemplate.
    */
+  registerResource(
+    name: string,
+    uriOrTemplate: string,
+    config: ResourceMetadata,
+    readCallback: ReadResourceCallback
+  ): RegisteredResource;
+  registerResource(
+    name: string,
+    uriOrTemplate: ResourceTemplate,
+    config: ResourceMetadata,
+    readCallback: ReadResourceTemplateCallback
+  ): RegisteredResourceTemplate;
   registerResource(
     name: string,
     uriOrTemplate: string | ResourceTemplate,
@@ -1190,6 +1202,7 @@ export type RegisteredTool = {
 
 const EMPTY_OBJECT_JSON_SCHEMA = {
   type: "object" as const,
+  properties: {},
 };
 
 // Helper to check if an object is a Zod schema (ZodRawShape)
