@@ -590,8 +590,17 @@ app.delete('/mcp', async (req: Request, res: Response) => {
 
 // Start the server
 const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
+setupServer().then(() => {
+  app.listen(PORT, (error) => {
+    if (error) {
+      console.error('Failed to start server:', error);
+      process.exit(1);
+    }
+    console.log(`MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
+  });
+}).catch(error => {
+  console.error('Failed to set up the server:', error);
+  process.exit(1);
 });
 
 ```
