@@ -385,34 +385,65 @@ const displayName = getDisplayName(tool);
 
 ### Sampling
 
-MCP servers can also request MCP client LLMs for responses. Below is an example of a sampling request sent just after connecting to the Client
+MCP servers can request LLM completions from connected clients that support sampling.
 
 ```typescript
-// Result sent back from LLM follow the CreateMessageSchema
-import {CreateMessageResult} from "@modelcontextprotocol/sdk/types.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 
-// Async Function to send a sampling request to the LLM at top-level
-async function samplingExample(server: McpServer): Promise<CreateMessageResult> {	
-  const samplingText = "Example Sampling Prompt";
-  const result = await McpServer.server.createMessage(
-    {
-      messages : [{
-        role: "user",
-        content: {
-          text: samplingText,
-          type: "text"
-        }
-      }],
-      maxTokens: 1000
-    }
-  );
-  return result;
+const mcpServer = new McpServer({
+  name: "tools-with-sample-server",
+  version: "1.0.0",
+});
+
+// Tool that uses LLM sampling to summarize any text
+mcpServer.registerTool(
+  "summarize",
+  {
+    description: "Summarize any text using an LLM",
+    inputSchema: {
+      text: z.string().describe("Text to summarize"),
+    },
+  },
+  async ({ text }) => {
+    // Call the LLM through MCP sampling
+    const response = await mcpServer.server.createMessage({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Please summarize the following text concisely:\n\n${text}`,
+          },
+        },
+      ],
+      maxTokens: 500,
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: response.content.type === "text" ? response.content.text : "Unable to generate summary",
+        },
+      ],
+    };
+  }
+);
+
+async function main() {
+  const transport = new StdioServerTransport();
+  await mcpServer.connect(transport);
+  console.log("MCP server is running...");
 }
 
-// Sampling request just after connecting to MCP Client
-server.connect(transport);
-samplingExample(server);
+main().catch((error) => {
+  console.error("Server error:", error);
+  process.exit(1);
+});
 ```
+
 
 ## Running Your Server
 
