@@ -21,6 +21,9 @@ import {
   RequestId,
   Result,
   ServerCapabilities,
+  RequestMeta,
+  MessageExtraInfo,
+  RequestInfo,
 } from "../types.js";
 import { Transport, TransportSendOptions } from "./transport.js";
 import { AuthInfo } from "../server/auth/types.js";
@@ -114,6 +117,22 @@ export type RequestHandlerExtra<SendRequestT extends Request,
      * The session ID from the transport, if available.
      */
     sessionId?: string;
+
+    /**
+     * Metadata from the original request.
+     */
+    _meta?: RequestMeta;
+
+    /**
+     * The JSON-RPC ID of the request being handled.
+     * This can be useful for tracking or logging purposes.
+     */
+    requestId: RequestId;
+
+    /**
+     * The original HTTP request.
+     */
+    requestInfo?: RequestInfo;
 
     /**
      * Sends a notification that relates to the current request being handled.
@@ -267,15 +286,21 @@ export abstract class Protocol<
    */
   async connect(transport: Transport): Promise<void> {
     this._transport = transport;
+    const _onclose = this.transport?.onclose;
     this._transport.onclose = () => {
+      _onclose?.();
       this._onclose();
     };
 
+    const _onerror = this.transport?.onerror;
     this._transport.onerror = (error: Error) => {
+      _onerror?.(error);
       this._onerror(error);
     };
 
+    const _onmessage = this._transport?.onmessage;
     this._transport.onmessage = (message, extra) => {
+      _onmessage?.(message, extra);
       if (isJSONRPCResponse(message) || isJSONRPCError(message)) {
         this._onresponse(message);
       } else if (isJSONRPCRequest(message)) {
@@ -283,7 +308,9 @@ export abstract class Protocol<
       } else if (isJSONRPCNotification(message)) {
         this._onnotification(message);
       } else {
-        this._onerror(new Error(`Unknown message type: ${JSON.stringify(message)}`));
+        this._onerror(
+          new Error(`Unknown message type: ${JSON.stringify(message)}`),
+        );
       }
     };
 
@@ -327,7 +354,7 @@ export abstract class Protocol<
       );
   }
 
-  private _onrequest(request: JSONRPCRequest, extra?: { authInfo?: AuthInfo }): void {
+  private _onrequest(request: JSONRPCRequest, extra?: MessageExtraInfo): void {
     const handler =
       this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
 
@@ -355,12 +382,15 @@ export abstract class Protocol<
     const fullExtra: RequestHandlerExtra<SendRequestT, SendNotificationT> = {
       signal: abortController.signal,
       sessionId: this._transport?.sessionId,
+      _meta: request.params?._meta,
       sendNotification:
         (notification) =>
           this.notification(notification, { relatedRequestId: request.id }),
       sendRequest: (r, resultSchema, options?) =>
         this.request(r, resultSchema, { ...options, relatedRequestId: request.id }),
       authInfo: extra?.authInfo,
+      requestId: request.id,
+      requestInfo: extra?.requestInfo
     };
 
     // Starting with Promise.resolve() puts any synchronous errors into the monad as well.
@@ -527,7 +557,10 @@ export abstract class Protocol<
         this._progressHandlers.set(messageId, options.onprogress);
         jsonrpcRequest.params = {
           ...request.params,
-          _meta: { progressToken: messageId },
+          _meta: {
+            ...(request.params?._meta || {}),
+            progressToken: messageId
+          },
         };
       }
 

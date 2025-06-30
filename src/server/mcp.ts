@@ -21,7 +21,8 @@ import {
   CompleteRequest,
   CompleteResult,
   PromptReference,
-  ResourceReference,
+  ResourceTemplateReference,
+  BaseMetadata,
   Resource,
   ListResourcesResult,
   ListResourceTemplatesRequestSchema,
@@ -39,12 +40,12 @@ import {
   ReadResourceResult,
   ServerRequest,
   ServerNotification,
+  ToolAnnotations,
 } from "../types.js";
 import { Completable, CompletableDef } from "./completable.js";
 import { UriTemplate, Variables } from "../shared/uriTemplate.js";
 import { RequestHandlerExtra } from "../shared/protocol.js";
 import { Transport } from "../shared/transport.js";
-import { createEventNotifier } from "../shared/eventNotifier.js";
 
 /**
  * High-level MCP server that provides a simpler API for working with resources, tools, and prompts.
@@ -64,14 +65,6 @@ export class McpServer {
   private _registeredTools: { [name: string]: RegisteredTool } = {};
   private _registeredPrompts: { [name: string]: RegisteredPrompt } = {};
 
-  private _onCapabilityChange = createEventNotifier<CapabilityEvent>();
-  /** Counter for unique resource invocation indexes, used to correlate resource invocation events */
-  private _resourceInvocationIndex = 0;
-  /** Counter for unique tool invocation indexes, used to correlate tool invocation events */
-  private _toolInvocationIndex = 0;
-  /** Counter for unique prompt invocation indexes, used to correlate prompt invocation events */
-  private _promptInvocationIndex = 0;
-
   constructor(serverInfo: Implementation, options?: ServerOptions) {
     this.server = new Server(serverInfo, options);
   }
@@ -89,32 +82,8 @@ export class McpServer {
    * Closes the connection.
    */
   async close(): Promise<void> {
-    this._onCapabilityChange.close();
     await this.server.close();
   }
-
-  /**
-   * Event notifier for capability changes. Listeners will be notified when capabilities are added, updated, removed,
-   * enabled, disabled, invoked, completed, or when errors occur.
-   *
-   * This provides a way to monitor and respond to all capability-related activities in the server,
-   * including both lifecycle changes and invocation events. Each capability type (resource, tool, prompt)
-   * maintains its own sequence of invocation indexes, which can be used to correlate invocations
-   * with their completions or errors.
-   *
-   * @example
-   * const subscription = server.onCapabilityChange((event) => {
-   *   if (event.action === "invoked") {
-   *     console.log(`${event.capabilityType} ${event.capabilityName} invoked with index ${event.invocationIndex}`);
-   *   } else if (event.action === "completed" || event.action === "error") {
-   *     console.log(`${event.capabilityType} operation completed in ${event.durationMs}ms`);
-   *   }
-   * });
-   *
-   * // Later, to stop listening:
-   * subscription.close();
-   */
-  public readonly onCapabilityChange = this._onCapabilityChange.onEvent;
 
   private _toolHandlersInitialized = false;
 
@@ -143,15 +112,26 @@ export class McpServer {
           ([, tool]) => tool.enabled,
         ).map(
           ([name, tool]): Tool => {
-            return {
+            const toolDefinition: Tool = {
               name,
+              title: tool.title,
               description: tool.description,
               inputSchema: tool.inputSchema
                 ? (zodToJsonSchema(tool.inputSchema, {
-                    strictUnions: true,
-                  }) as Tool["inputSchema"])
+                  strictUnions: true,
+                }) as Tool["inputSchema"])
                 : EMPTY_OBJECT_JSON_SCHEMA,
+              annotations: tool.annotations,
             };
+
+            if (tool.outputSchema) {
+              toolDefinition.outputSchema = zodToJsonSchema(
+                tool.outputSchema,
+                { strictUnions: true }
+              ) as Tool["outputSchema"];
+            }
+
+            return toolDefinition;
           },
         ),
       }),
@@ -168,88 +148,32 @@ export class McpServer {
           );
         }
 
-        const invocationIndex = this._toolInvocationIndex++;
-        const startTime = performance.now();
-
-        this._onCapabilityChange.notify(() => ({
-          serverInfo: this.server.getVersion(),
-          capabilityType: "tool",
-          capabilityName: request.params.name,
-          action: "invoked",
-          invocationIndex,
-          arguments: request.params.arguments,
-        }));
-
         if (!tool.enabled) {
-          const error = new McpError(
+          throw new McpError(
             ErrorCode.InvalidParams,
             `Tool ${request.params.name} disabled`,
           );
-
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "tool",
-            capabilityName: request.params.name,
-            action: "error",
-            invocationIndex,
-            error,
-            durationMs: performance.now() - startTime,
-          }));
-
-          throw error;
         }
+
+        let result: CallToolResult;
 
         if (tool.inputSchema) {
           const parseResult = await tool.inputSchema.safeParseAsync(
             request.params.arguments,
           );
           if (!parseResult.success) {
-            const error = new McpError(
+            throw new McpError(
               ErrorCode.InvalidParams,
               `Invalid arguments for tool ${request.params.name}: ${parseResult.error.message}`,
             );
-
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "tool",
-              capabilityName: request.params.name,
-              action: "error",
-              invocationIndex,
-              error,
-              durationMs: performance.now() - startTime,
-            }));
-
-            throw error;
           }
 
           const args = parseResult.data;
-          const cb = tool.callback as ToolCallback<ZodRawShape>;
+          const cb = tool.callback as ToolCallback<ZodRawShape, ZodRawShape>;
           try {
-            return await Promise.resolve(cb(args, extra)).then((result) => {
-              this._onCapabilityChange.notify(() => ({
-                serverInfo: this.server.getVersion(),
-                capabilityType: "tool",
-                capabilityName: request.params.name,
-                action: "completed",
-                invocationIndex,
-                result,
-                durationMs: performance.now() - startTime,
-              }));
-
-              return result;
-            });
+            result = await Promise.resolve(cb(args, extra));
           } catch (error) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "tool",
-              capabilityName: request.params.name,
-              action: "error",
-              invocationIndex,
-              error,
-              durationMs: performance.now() - startTime,
-            }));
-
-            return {
+            result = {
               content: [
                 {
                   type: "text",
@@ -260,33 +184,11 @@ export class McpServer {
             };
           }
         } else {
-          const cb = tool.callback as ToolCallback<undefined>;
+          const cb = tool.callback as ToolCallback<undefined, ZodRawShape>;
           try {
-            const result = await Promise.resolve(cb(extra));
-
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "tool",
-              capabilityName: request.params.name,
-              action: "completed",
-              invocationIndex,
-              result,
-              durationMs: performance.now() - startTime,
-            }));
-
-            return result;
+            result = await Promise.resolve(cb(extra));
           } catch (error) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "tool",
-              capabilityName: request.params.name,
-              action: "error",
-              invocationIndex,
-              error,
-              durationMs: performance.now() - startTime,
-            }));
-
-            return {
+            result = {
               content: [
                 {
                   type: "text",
@@ -297,6 +199,28 @@ export class McpServer {
             };
           }
         }
+
+        if (tool.outputSchema && !result.isError) {
+          if (!result.structuredContent) {
+            throw new McpError(
+              ErrorCode.InvalidParams,
+              `Tool ${request.params.name} has an output schema but no structured content was provided`,
+            );
+          }
+
+          // if the tool has an output schema, validate structured content
+          const parseResult = await tool.outputSchema.safeParseAsync(
+            result.structuredContent,
+          );
+          if (!parseResult.success) {
+            throw new McpError(
+              ErrorCode.InvalidParams,
+              `Invalid structured content for tool ${request.params.name}: ${parseResult.error.message}`,
+            );
+          }
+        }
+
+        return result;
       },
     );
 
@@ -313,6 +237,10 @@ export class McpServer {
     this.server.assertCanSetRequestHandler(
       CompleteRequestSchema.shape.method.value,
     );
+
+    this.server.registerCapabilities({
+      completions: {},
+    });
 
     this.server.setRequestHandler(
       CompleteRequestSchema,
@@ -348,105 +276,37 @@ export class McpServer {
       );
     }
 
-    const invocationIndex = this._promptInvocationIndex++;
-    const startTime = performance.now();
-
-    this._onCapabilityChange.notify(() => ({
-      serverInfo: this.server.getVersion(),
-      capabilityType: "prompt",
-      capabilityName: ref.name,
-      action: "invoked",
-      invocationIndex,
-      arguments: request.params.argument.name,
-    }));
-
     if (!prompt.enabled) {
-      const error = new McpError(
+      throw new McpError(
         ErrorCode.InvalidParams,
         `Prompt ${ref.name} disabled`,
       );
-
-      this._onCapabilityChange.notify(() => ({
-        serverInfo: this.server.getVersion(),
-        capabilityType: "prompt",
-        capabilityName: ref.name,
-        action: "error",
-        invocationIndex,
-        error,
-        durationMs: performance.now() - startTime,
-      }));
-
-      throw error;
     }
 
     if (!prompt.argsSchema) {
-      this._onCapabilityChange.notify(() => ({
-        serverInfo: this.server.getVersion(),
-        capabilityType: "prompt",
-        capabilityName: ref.name,
-        action: "completed",
-        invocationIndex,
-        result: EMPTY_COMPLETION_RESULT,
-        durationMs: performance.now() - startTime,
-      }));
-
       return EMPTY_COMPLETION_RESULT;
     }
 
     const field = prompt.argsSchema.shape[request.params.argument.name];
     if (!(field instanceof Completable)) {
-      this._onCapabilityChange.notify(() => ({
-        serverInfo: this.server.getVersion(),
-        capabilityType: "prompt",
-        capabilityName: ref.name,
-        action: "completed",
-        invocationIndex,
-        result: EMPTY_COMPLETION_RESULT,
-        durationMs: performance.now() - startTime,
-      }));
-
       return EMPTY_COMPLETION_RESULT;
     }
 
     const def: CompletableDef<ZodString> = field._def;
-    const suggestions = await def.complete(request.params.argument.value);
-
-    this._onCapabilityChange.notify(() => ({
-      serverInfo: this.server.getVersion(),
-      capabilityType: "prompt",
-      capabilityName: ref.name,
-      action: "completed",
-      invocationIndex,
-      result: suggestions,
-      durationMs: performance.now() - startTime,
-    }));
-
+    const suggestions = await def.complete(request.params.argument.value, request.params.context);
     return createCompletionResult(suggestions);
   }
 
   private async handleResourceCompletion(
     request: CompleteRequest,
-    ref: ResourceReference,
+    ref: ResourceTemplateReference,
   ): Promise<CompleteResult> {
     const template = Object.values(this._registeredResourceTemplates).find(
       (t) => t.resourceTemplate.uriTemplate.toString() === ref.uri,
     );
 
-    const invocationIndex = this._resourceInvocationIndex++;
-    const startTime = performance.now();
-
     if (!template) {
       if (this._registeredResources[ref.uri]) {
-        this._onCapabilityChange.notify(() => ({
-          serverInfo: this.server.getVersion(),
-          capabilityType: "resource",
-          capabilityName: ref.uri,
-          action: "completed",
-          invocationIndex,
-          result: EMPTY_COMPLETION_RESULT,
-          durationMs: performance.now() - startTime,
-        }));
-
         // Attempting to autocomplete a fixed resource URI is not an error in the spec (but probably should be).
         return EMPTY_COMPLETION_RESULT;
       }
@@ -461,46 +321,11 @@ export class McpServer {
       request.params.argument.name,
     );
     if (!completer) {
-      this._onCapabilityChange.notify(() => ({
-        serverInfo: this.server.getVersion(),
-        capabilityType: "resource",
-        capabilityName: ref.uri,
-        action: "completed",
-        invocationIndex,
-        result: EMPTY_COMPLETION_RESULT,
-        durationMs: performance.now() - startTime,
-      }));
-
       return EMPTY_COMPLETION_RESULT;
     }
 
-    try {
-      const suggestions = await completer(request.params.argument.value);
-
-      this._onCapabilityChange.notify(() => ({
-        serverInfo: this.server.getVersion(),
-        capabilityType: "resource",
-        capabilityName: ref.uri,
-        action: "completed",
-        invocationIndex,
-        result: suggestions,
-        durationMs: performance.now() - startTime,
-      }));
-
-      return createCompletionResult(suggestions);
-    } catch (error) {
-      this._onCapabilityChange.notify(() => ({
-        serverInfo: this.server.getVersion(),
-        capabilityType: "resource",
-        capabilityName: ref.uri,
-        action: "error",
-        invocationIndex,
-        error,
-        durationMs: performance.now() - startTime,
-      }));
-
-      throw error;
-    }
+    const suggestions = await completer(request.params.argument.value, request.params.context);
+    return createCompletionResult(suggestions);
   }
 
   private _resourceHandlersInitialized = false;
@@ -550,8 +375,9 @@ export class McpServer {
           const result = await template.resourceTemplate.listCallback(extra);
           for (const resource of result.resources) {
             templateResources.push({
-              ...resource,
               ...template.metadata,
+              // the defined resource metadata should override the template metadata if present
+              ...resource,
             });
           }
         }
@@ -583,62 +409,13 @@ export class McpServer {
         // First check for exact resource match
         const resource = this._registeredResources[uri.toString()];
         if (resource) {
-          const invocationIndex = this._resourceInvocationIndex++;
-          const startTime = performance.now();
-
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "resource",
-            capabilityName: uri.toString(),
-            action: "invoked",
-            invocationIndex,
-          }));
-
           if (!resource.enabled) {
-            const error = new McpError(
+            throw new McpError(
               ErrorCode.InvalidParams,
               `Resource ${uri} disabled`,
             );
-
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: uri.toString(),
-              action: "error",
-              invocationIndex,
-              error,
-              durationMs: performance.now() - startTime,
-            }));
-
-            throw error;
           }
-          try {
-            const result = await resource.readCallback(uri, extra);
-
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: uri.toString(),
-              action: "completed",
-              invocationIndex,
-              result,
-              durationMs: performance.now() - startTime,
-            }));
-
-            return result;
-          } catch (error) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: uri.toString(),
-              action: "error",
-              invocationIndex,
-              error,
-              durationMs: performance.now() - startTime,
-            }));
-
-            throw error;
-          }
+          return resource.readCallback(uri, extra);
         }
 
         // Then check templates
@@ -649,44 +426,7 @@ export class McpServer {
             uri.toString(),
           );
           if (variables) {
-            const invocationIndex = this._resourceInvocationIndex++;
-            const startTime = performance.now();
-
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: uri.toString(),
-              action: "invoked",
-              invocationIndex,
-            }));
-
-            try {
-              const result = await template.readCallback(uri, variables, extra);
-
-              this._onCapabilityChange.notify(() => ({
-                serverInfo: this.server.getVersion(),
-                capabilityType: "resource",
-                capabilityName: uri.toString(),
-                action: "completed",
-                invocationIndex,
-                result,
-                durationMs: performance.now() - startTime,
-              }));
-
-              return result;
-            } catch (error) {
-              this._onCapabilityChange.notify(() => ({
-                serverInfo: this.server.getVersion(),
-                capabilityType: "resource",
-                capabilityName: uri.toString(),
-                action: "error",
-                invocationIndex,
-                error,
-                durationMs: performance.now() - startTime,
-              }));
-
-              throw error;
-            }
+            return template.readCallback(uri, variables, extra);
           }
         }
 
@@ -731,6 +471,7 @@ export class McpServer {
           ([name, prompt]): Prompt => {
             return {
               name,
+              title: prompt.title,
               description: prompt.description,
               arguments: prompt.argsSchema
                 ? promptArgumentsFromSchema(prompt.argsSchema)
@@ -752,35 +493,11 @@ export class McpServer {
           );
         }
 
-        const invocationIndex = this._promptInvocationIndex++;
-        const startTime = performance.now();
-
-        this._onCapabilityChange.notify(() => ({
-          serverInfo: this.server.getVersion(),
-          capabilityType: "prompt",
-          capabilityName: request.params.name,
-          action: "invoked",
-          invocationIndex,
-          arguments: request.params.arguments,
-        }));
-
         if (!prompt.enabled) {
-          const error = new McpError(
+          throw new McpError(
             ErrorCode.InvalidParams,
             `Prompt ${request.params.name} disabled`,
           );
-
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "prompt",
-            capabilityName: request.params.name,
-            action: "error",
-            invocationIndex,
-            error,
-            durationMs: performance.now() - startTime,
-          }));
-
-          throw error;
         }
 
         if (prompt.argsSchema) {
@@ -788,86 +505,20 @@ export class McpServer {
             request.params.arguments,
           );
           if (!parseResult.success) {
-            const error = new McpError(
+            throw new McpError(
               ErrorCode.InvalidParams,
               `Invalid arguments for prompt ${request.params.name}: ${parseResult.error.message}`,
             );
-
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "prompt",
-              capabilityName: request.params.name,
-              action: "error",
-              invocationIndex,
-              error,
-              durationMs: performance.now() - startTime,
-            }));
-
-            throw error;
           }
 
           const args = parseResult.data;
           const cb = prompt.callback as PromptCallback<PromptArgsRawShape>;
-
-          try {
-            const result = await Promise.resolve(cb(args, extra));
-
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "prompt",
-              capabilityName: request.params.name,
-              action: "completed",
-              invocationIndex,
-              result,
-              durationMs: performance.now() - startTime,
-            }));
-
-            return result;
-          } catch (error) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "prompt",
-              capabilityName: request.params.name,
-              action: "error",
-              invocationIndex,
-              error,
-              durationMs: performance.now() - startTime,
-            }));
-
-            throw error;
-          }
+          return await Promise.resolve(cb(args, extra));
         } else {
           const cb = prompt.callback as PromptCallback<undefined>;
-
-          try {
-            const result = await Promise.resolve(cb(extra));
-
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "prompt",
-              capabilityName: request.params.name,
-              action: "completed",
-              invocationIndex,
-              result,
-              durationMs: performance.now() - startTime,
-            }));
-
-            return result;
-          } catch (error) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "prompt",
-              capabilityName: request.params.name,
-              action: "error",
-              invocationIndex,
-              error,
-              durationMs: performance.now() - startTime,
-            }));
-
-            throw error;
-          }
+          return await Promise.resolve(cb(extra));
         }
-      }
+      },
     );
 
     this.setCompletionRequestHandler();
@@ -928,132 +579,13 @@ export class McpServer {
         throw new Error(`Resource ${uriOrTemplate} is already registered`);
       }
 
-      const registeredResource: RegisteredResource = {
+      const registeredResource = this._createRegisteredResource(
         name,
+        undefined,
+        uriOrTemplate,
         metadata,
-        readCallback: readCallback as ReadResourceCallback,
-        enabled: true,
-        disable: () => {
-          if (!registeredResource.enabled) return;
-
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "resource",
-            capabilityName: name,
-            action: "disabled",
-          }));
-
-          registeredResource.update({ enabled: false });
-        },
-        enable: () => {
-          if (registeredResource.enabled) return;
-
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "resource",
-            capabilityName: name,
-            action: "enabled",
-          }));
-
-          registeredResource.update({ enabled: true });
-        },
-        remove: () => {
-          if (uriOrTemplate === null) return;
-
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "resource",
-            capabilityName: name,
-            action: "removed",
-          }));
-
-          registeredResource.update({ uri: null });
-        },
-        update: (updates) => {
-          let added = false;
-          let removed = false;
-          let updated = false;
-          let enabled = false;
-
-          if (
-            typeof updates.uri !== "undefined" &&
-            updates.uri !== uriOrTemplate
-          ) {
-            removed = true;
-            delete this._registeredResources[uriOrTemplate];
-
-            if (updates.uri) {
-              added = true;
-              this._registeredResources[updates.uri] = registeredResource;
-            }
-          }
-
-          if (typeof updates.name !== "undefined" && updates.name !== name) {
-            updated = true;
-            registeredResource.name = updates.name;
-          }
-
-          if (typeof updates.metadata !== "undefined" && updates.metadata !== metadata) {
-            updated = true;
-            registeredResource.metadata = updates.metadata;
-          }
-
-          if (typeof updates.callback !== "undefined" && updates.callback !== registeredResource.readCallback) {
-            updated = true;
-            registeredResource.readCallback = updates.callback;
-          }
-
-          if (typeof updates.enabled !== "undefined" && updates.enabled !== registeredResource.enabled) {
-            enabled = true;
-            registeredResource.enabled = updates.enabled;
-          }
-
-          if (removed) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: name,
-              action: "removed",
-            }));
-          }
-
-          if (added) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: registeredResource.name,
-              action: "added",
-            }));
-          }
-
-          if (updated) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: registeredResource.name,
-              action: "updated",
-            }));
-          }
-
-          if (enabled) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: registeredResource.name,
-              action: registeredResource.enabled ? "enabled" : "disabled",
-            }));
-          }
-          this.sendResourceListChanged();
-        },
-      };
-      this._registeredResources[uriOrTemplate] = registeredResource;
-
-      this._onCapabilityChange.notify(() => ({
-        serverInfo: this.server.getVersion(),
-        capabilityType: "resource",
-        capabilityName: name,
-        action: "added",
-      }));
+        readCallback as ReadResourceCallback
+      );
 
       this.setResourceRequestHandlers();
       this.sendResourceListChanged();
@@ -1063,145 +595,218 @@ export class McpServer {
         throw new Error(`Resource template ${name} is already registered`);
       }
 
-      const registeredResourceTemplate: RegisteredResourceTemplate = {
-        resourceTemplate: uriOrTemplate,
+      const registeredResourceTemplate = this._createRegisteredResourceTemplate(
+        name,
+        undefined,
+        uriOrTemplate,
         metadata,
-        readCallback: readCallback as ReadResourceTemplateCallback,
-        enabled: true,
-        disable: () => {
-          if (!registeredResourceTemplate.enabled) return;
-
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "resource",
-            capabilityName: name,
-            action: "disabled",
-          }));
-
-          registeredResourceTemplate.update({ enabled: false });
-        },
-        enable: () => {
-          if (registeredResourceTemplate.enabled) return;
-
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "resource",
-            capabilityName: name,
-            action: "enabled",
-          }));
-
-          registeredResourceTemplate.update({ enabled: true });
-        },
-        remove: () => {
-          if (name === null) return;
-
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "resource",
-            capabilityName: name,
-            action: "removed",
-          }));
-
-          registeredResourceTemplate.update({ name: null });
-        },
-        update: (updates) => {
-          let added = false;
-          let removed = false;
-          let updated = false;
-          let enabled = false;
-
-          if (typeof updates.name !== "undefined" && updates.name !== name) {
-            removed = true;
-            delete this._registeredResourceTemplates[name];
-
-            if (updates.name) {
-              added = true;
-              this._registeredResourceTemplates[updates.name] =
-                registeredResourceTemplate;
-            }
-          }
-
-          if (typeof updates.template !== "undefined" && updates.template !== registeredResourceTemplate.resourceTemplate) {
-            updated = true;
-            registeredResourceTemplate.resourceTemplate = updates.template;
-          }
-
-          if (
-            typeof updates.metadata !== "undefined" &&
-            updates.metadata !== metadata
-          ) {
-            updated = true;
-            registeredResourceTemplate.metadata = updates.metadata;
-          }
-
-          if (
-            typeof updates.callback !== "undefined" &&
-            updates.callback !== registeredResourceTemplate.readCallback
-          ) {
-            updated = true;
-            registeredResourceTemplate.readCallback = updates.callback;
-          }
-
-          if (
-            typeof updates.enabled !== "undefined" &&
-            updates.enabled !== registeredResourceTemplate.enabled
-          ) {
-          enabled = true;
-            registeredResourceTemplate.enabled = updates.enabled;
-          }
-
-          if (removed) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: name,
-              action: "removed",
-            }));
-          }
-
-          if (added) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: updates.name || name,
-              action: "added",
-            }));
-          }
-
-          if (updated) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: updates.name || name,
-              action: "updated",
-            }));
-          }
-
-          if (enabled) {
-            this._onCapabilityChange.notify(() => ({
-              serverInfo: this.server.getVersion(),
-              capabilityType: "resource",
-              capabilityName: updates.name || name,
-              action: registeredResourceTemplate.enabled ? "enabled" : "disabled",
-            }));
-          }
-
-          this.sendResourceListChanged();
-        },
-      };
-      this._registeredResourceTemplates[name] = registeredResourceTemplate;
-
-      this._onCapabilityChange.notify(() => ({
-        serverInfo: this.server.getVersion(),
-        capabilityType: "resource",
-        capabilityName: name,
-        action: "added",
-      }));
+        readCallback as ReadResourceTemplateCallback
+      );
 
       this.setResourceRequestHandlers();
       this.sendResourceListChanged();
       return registeredResourceTemplate;
     }
+  }
+
+  /**
+   * Registers a resource with a config object and callback.
+   * For static resources, use a URI string. For dynamic resources, use a ResourceTemplate.
+   */
+  registerResource(
+    name: string,
+    uriOrTemplate: string,
+    config: ResourceMetadata,
+    readCallback: ReadResourceCallback
+  ): RegisteredResource;
+  registerResource(
+    name: string,
+    uriOrTemplate: ResourceTemplate,
+    config: ResourceMetadata,
+    readCallback: ReadResourceTemplateCallback
+  ): RegisteredResourceTemplate;
+  registerResource(
+    name: string,
+    uriOrTemplate: string | ResourceTemplate,
+    config: ResourceMetadata,
+    readCallback: ReadResourceCallback | ReadResourceTemplateCallback
+  ): RegisteredResource | RegisteredResourceTemplate {
+    if (typeof uriOrTemplate === "string") {
+      if (this._registeredResources[uriOrTemplate]) {
+        throw new Error(`Resource ${uriOrTemplate} is already registered`);
+      }
+
+      const registeredResource = this._createRegisteredResource(
+        name,
+        (config as BaseMetadata).title,
+        uriOrTemplate,
+        config,
+        readCallback as ReadResourceCallback
+      );
+
+      this.setResourceRequestHandlers();
+      this.sendResourceListChanged();
+      return registeredResource;
+    } else {
+      if (this._registeredResourceTemplates[name]) {
+        throw new Error(`Resource template ${name} is already registered`);
+      }
+
+      const registeredResourceTemplate = this._createRegisteredResourceTemplate(
+        name,
+        (config as BaseMetadata).title,
+        uriOrTemplate,
+        config,
+        readCallback as ReadResourceTemplateCallback
+      );
+
+      this.setResourceRequestHandlers();
+      this.sendResourceListChanged();
+      return registeredResourceTemplate;
+    }
+  }
+
+  private _createRegisteredResource(
+    name: string,
+    title: string | undefined,
+    uri: string,
+    metadata: ResourceMetadata | undefined,
+    readCallback: ReadResourceCallback
+  ): RegisteredResource {
+    const registeredResource: RegisteredResource = {
+      name,
+      title,
+      metadata,
+      readCallback,
+      enabled: true,
+      disable: () => registeredResource.update({ enabled: false }),
+      enable: () => registeredResource.update({ enabled: true }),
+      remove: () => registeredResource.update({ uri: null }),
+      update: (updates) => {
+        if (typeof updates.uri !== "undefined" && updates.uri !== uri) {
+          delete this._registeredResources[uri]
+          if (updates.uri) this._registeredResources[updates.uri] = registeredResource
+        }
+        if (typeof updates.name !== "undefined") registeredResource.name = updates.name
+        if (typeof updates.title !== "undefined") registeredResource.title = updates.title
+        if (typeof updates.metadata !== "undefined") registeredResource.metadata = updates.metadata
+        if (typeof updates.callback !== "undefined") registeredResource.readCallback = updates.callback
+        if (typeof updates.enabled !== "undefined") registeredResource.enabled = updates.enabled
+        this.sendResourceListChanged()
+      },
+    };
+    this._registeredResources[uri] = registeredResource;
+    return registeredResource;
+  }
+
+  private _createRegisteredResourceTemplate(
+    name: string,
+    title: string | undefined,
+    template: ResourceTemplate,
+    metadata: ResourceMetadata | undefined,
+    readCallback: ReadResourceTemplateCallback
+  ): RegisteredResourceTemplate {
+    const registeredResourceTemplate: RegisteredResourceTemplate = {
+      resourceTemplate: template,
+      title,
+      metadata,
+      readCallback,
+      enabled: true,
+      disable: () => registeredResourceTemplate.update({ enabled: false }),
+      enable: () => registeredResourceTemplate.update({ enabled: true }),
+      remove: () => registeredResourceTemplate.update({ name: null }),
+      update: (updates) => {
+        if (typeof updates.name !== "undefined" && updates.name !== name) {
+          delete this._registeredResourceTemplates[name]
+          if (updates.name) this._registeredResourceTemplates[updates.name] = registeredResourceTemplate
+        }
+        if (typeof updates.title !== "undefined") registeredResourceTemplate.title = updates.title
+        if (typeof updates.template !== "undefined") registeredResourceTemplate.resourceTemplate = updates.template
+        if (typeof updates.metadata !== "undefined") registeredResourceTemplate.metadata = updates.metadata
+        if (typeof updates.callback !== "undefined") registeredResourceTemplate.readCallback = updates.callback
+        if (typeof updates.enabled !== "undefined") registeredResourceTemplate.enabled = updates.enabled
+        this.sendResourceListChanged()
+      },
+    };
+    this._registeredResourceTemplates[name] = registeredResourceTemplate;
+    return registeredResourceTemplate;
+  }
+
+  private _createRegisteredPrompt(
+    name: string,
+    title: string | undefined,
+    description: string | undefined,
+    argsSchema: PromptArgsRawShape | undefined,
+    callback: PromptCallback<PromptArgsRawShape | undefined>
+  ): RegisteredPrompt {
+    const registeredPrompt: RegisteredPrompt = {
+      title,
+      description,
+      argsSchema: argsSchema === undefined ? undefined : z.object(argsSchema),
+      callback,
+      enabled: true,
+      disable: () => registeredPrompt.update({ enabled: false }),
+      enable: () => registeredPrompt.update({ enabled: true }),
+      remove: () => registeredPrompt.update({ name: null }),
+      update: (updates) => {
+        if (typeof updates.name !== "undefined" && updates.name !== name) {
+          delete this._registeredPrompts[name]
+          if (updates.name) this._registeredPrompts[updates.name] = registeredPrompt
+        }
+        if (typeof updates.title !== "undefined") registeredPrompt.title = updates.title
+        if (typeof updates.description !== "undefined") registeredPrompt.description = updates.description
+        if (typeof updates.argsSchema !== "undefined") registeredPrompt.argsSchema = z.object(updates.argsSchema)
+        if (typeof updates.callback !== "undefined") registeredPrompt.callback = updates.callback
+        if (typeof updates.enabled !== "undefined") registeredPrompt.enabled = updates.enabled
+        this.sendPromptListChanged()
+      },
+    };
+    this._registeredPrompts[name] = registeredPrompt;
+    return registeredPrompt;
+  }
+
+  private _createRegisteredTool(
+    name: string,
+    title: string | undefined,
+    description: string | undefined,
+    inputSchema: ZodRawShape | undefined,
+    outputSchema: ZodRawShape | undefined,
+    annotations: ToolAnnotations | undefined,
+    callback: ToolCallback<ZodRawShape | undefined, ZodRawShape | undefined>
+  ): RegisteredTool {
+    const registeredTool: RegisteredTool = {
+      title,
+      description,
+      inputSchema:
+        inputSchema === undefined ? undefined : z.object(inputSchema),
+      outputSchema:
+        outputSchema === undefined ? undefined : z.object(outputSchema),
+      annotations,
+      callback,
+      enabled: true,
+      disable: () => registeredTool.update({ enabled: false }),
+      enable: () => registeredTool.update({ enabled: true }),
+      remove: () => registeredTool.update({ name: null }),
+      update: (updates) => {
+        if (typeof updates.name !== "undefined" && updates.name !== name) {
+          delete this._registeredTools[name]
+          if (updates.name) this._registeredTools[updates.name] = registeredTool
+        }
+        if (typeof updates.title !== "undefined") registeredTool.title = updates.title
+        if (typeof updates.description !== "undefined") registeredTool.description = updates.description
+        if (typeof updates.paramsSchema !== "undefined") registeredTool.inputSchema = z.object(updates.paramsSchema)
+        if (typeof updates.callback !== "undefined") registeredTool.callback = updates.callback
+        if (typeof updates.annotations !== "undefined") registeredTool.annotations = updates.annotations
+        if (typeof updates.enabled !== "undefined") registeredTool.enabled = updates.enabled
+        this.sendToolListChanged()
+      },
+    };
+    this._registeredTools[name] = registeredTool;
+
+    this.setToolRequestHandlers();
+    this.sendToolListChanged()
+
+    return registeredTool
   }
 
   /**
@@ -1215,182 +820,132 @@ export class McpServer {
   tool(name: string, description: string, cb: ToolCallback): RegisteredTool;
 
   /**
-   * Registers a tool `name` accepting the given arguments, which must be an object containing named properties associated with Zod schemas. When the client calls it, the function will be run with the parsed and validated arguments.
+   * Registers a tool taking either a parameter schema for validation or annotations for additional metadata.
+   * This unified overload handles both `tool(name, paramsSchema, cb)` and `tool(name, annotations, cb)` cases.
+   * 
+   * Note: We use a union type for the second parameter because TypeScript cannot reliably disambiguate
+   * between ToolAnnotations and ZodRawShape during overload resolution, as both are plain object types.
    */
   tool<Args extends ZodRawShape>(
     name: string,
-    paramsSchema: Args,
+    paramsSchemaOrAnnotations: Args | ToolAnnotations,
     cb: ToolCallback<Args>,
   ): RegisteredTool;
 
   /**
-   * Registers a tool `name` (with a description) accepting the given arguments, which must be an object containing named properties associated with Zod schemas. When the client calls it, the function will be run with the parsed and validated arguments.
+   * Registers a tool `name` (with a description) taking either parameter schema or annotations.
+   * This unified overload handles both `tool(name, description, paramsSchema, cb)` and 
+   * `tool(name, description, annotations, cb)` cases.
+   * 
+   * Note: We use a union type for the third parameter because TypeScript cannot reliably disambiguate
+   * between ToolAnnotations and ZodRawShape during overload resolution, as both are plain object types.
+   */
+  tool<Args extends ZodRawShape>(
+    name: string,
+    description: string,
+    paramsSchemaOrAnnotations: Args | ToolAnnotations,
+    cb: ToolCallback<Args>,
+  ): RegisteredTool;
+
+  /**
+   * Registers a tool with both parameter schema and annotations.
+   */
+  tool<Args extends ZodRawShape>(
+    name: string,
+    paramsSchema: Args,
+    annotations: ToolAnnotations,
+    cb: ToolCallback<Args>,
+  ): RegisteredTool;
+
+  /**
+   * Registers a tool with description, parameter schema, and annotations.
    */
   tool<Args extends ZodRawShape>(
     name: string,
     description: string,
     paramsSchema: Args,
+    annotations: ToolAnnotations,
     cb: ToolCallback<Args>,
   ): RegisteredTool;
 
+
+  /**
+   * tool() implementation. Parses arguments passed to overrides defined above.
+   */
   tool(name: string, ...rest: unknown[]): RegisteredTool {
     if (this._registeredTools[name]) {
       throw new Error(`Tool ${name} is already registered`);
     }
 
     let description: string | undefined;
+    let inputSchema: ZodRawShape | undefined;
+    let outputSchema: ZodRawShape | undefined;
+    let annotations: ToolAnnotations | undefined;
+
+    // Tool properties are passed as separate arguments, with omissions allowed.
+    // Support for this style is frozen as of protocol version 2025-03-26. Future additions
+    // to tool definition should *NOT* be added.
+
     if (typeof rest[0] === "string") {
       description = rest.shift() as string;
     }
 
-    let paramsSchema: ZodRawShape | undefined;
+    // Handle the different overload combinations
     if (rest.length > 1) {
-      paramsSchema = rest.shift() as ZodRawShape;
+      // We have at least one more arg before the callback
+      const firstArg = rest[0];
+
+      if (isZodRawShape(firstArg)) {
+        // We have a params schema as the first arg
+        inputSchema = rest.shift() as ZodRawShape;
+
+        // Check if the next arg is potentially annotations
+        if (rest.length > 1 && typeof rest[0] === "object" && rest[0] !== null && !(isZodRawShape(rest[0]))) {
+          // Case: tool(name, paramsSchema, annotations, cb)
+          // Or: tool(name, description, paramsSchema, annotations, cb)
+          annotations = rest.shift() as ToolAnnotations;
+        }
+      } else if (typeof firstArg === "object" && firstArg !== null) {
+        // Not a ZodRawShape, so must be annotations in this position
+        // Case: tool(name, annotations, cb)
+        // Or: tool(name, description, annotations, cb)
+        annotations = rest.shift() as ToolAnnotations;
+      }
+    }
+    const callback = rest[0] as ToolCallback<ZodRawShape | undefined>;
+
+    return this._createRegisteredTool(name, undefined, description, inputSchema, outputSchema, annotations, callback)
+  }
+
+  /**
+   * Registers a tool with a config object and callback.
+   */
+  registerTool<InputArgs extends ZodRawShape, OutputArgs extends ZodRawShape>(
+    name: string,
+    config: {
+      title?: string;
+      description?: string;
+      inputSchema?: InputArgs;
+      outputSchema?: OutputArgs;
+      annotations?: ToolAnnotations;
+    },
+    cb: ToolCallback<InputArgs, OutputArgs>
+  ): RegisteredTool {
+    if (this._registeredTools[name]) {
+      throw new Error(`Tool ${name} is already registered`);
     }
 
-    const cb = rest[0] as ToolCallback<ZodRawShape | undefined>;
-    const registeredTool: RegisteredTool = {
+    const { title, description, inputSchema, outputSchema, annotations } = config;
+
+    return this._createRegisteredTool(
+      name,
+      title,
       description,
-      inputSchema:
-        paramsSchema === undefined ? undefined : z.object(paramsSchema),
-      callback: cb,
-      enabled: true,
-      disable: () => {
-        if (!registeredTool.enabled) return;
-
-        this._onCapabilityChange.notify(() => ({
-          serverInfo: this.server.getVersion(),
-          capabilityType: "tool",
-          capabilityName: name,
-          action: "disabled",
-        }));
-
-        registeredTool.update({ enabled: false });
-      },
-      enable: () => {
-        if (registeredTool.enabled) return;
-
-        this._onCapabilityChange.notify(() => ({
-          serverInfo: this.server.getVersion(),
-          capabilityType: "tool",
-          capabilityName: name,
-          action: "enabled",
-        }));
-
-        registeredTool.update({ enabled: true });
-      },
-      remove: () => {
-        if (name === null) return;
-
-        this._onCapabilityChange.notify(() => ({
-          serverInfo: this.server.getVersion(),
-          capabilityType: "tool",
-          capabilityName: name,
-          action: "removed",
-        }));
-
-        registeredTool.update({ name: null });
-      },
-      update: (updates) => {
-        let added = false;
-        let removed = false;
-        let updated = false;
-        let enabled = false;
-
-        if (typeof updates.name !== "undefined" && updates.name !== name) {
-          removed = true;
-          delete this._registeredTools[name];
-
-          if (updates.name) {
-            added = true;
-            this._registeredTools[updates.name] = registeredTool;
-          }
-        }
-
-        if (
-          typeof updates.description !== "undefined" &&
-          updates.description !== description
-        ) {
-          updated = true;
-          registeredTool.description = updates.description;
-        }
-
-        if (
-          typeof updates.paramsSchema !== "undefined" &&
-          updates.paramsSchema !== paramsSchema
-        ) {
-          updated = true;
-          registeredTool.inputSchema = z.object(updates.paramsSchema);
-        }
-
-        if (
-          typeof updates.callback !== "undefined" &&
-          updates.callback !== registeredTool.callback
-        ) {
-          updated = true;
-          registeredTool.callback = updates.callback;
-        }
-
-        if (
-          typeof updates.enabled !== "undefined" &&
-          updates.enabled !== registeredTool.enabled
-        ) {
-          enabled = true;
-          registeredTool.enabled = updates.enabled;
-        }
-
-        if (removed) {
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "tool",
-            capabilityName: name,
-            action: "removed",
-          }));
-        }
-
-        if (added) {
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "tool",
-            capabilityName: updates.name || name,
-            action: "added",
-          }));
-        }
-
-        if (updated) {
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "tool",
-            capabilityName: updates.name || name,
-            action: "updated",
-          }));
-        }
-
-        if (enabled) {
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "tool",
-            capabilityName: updates.name || name,
-            action: registeredTool.enabled ? "enabled" : "disabled",
-          }));
-        }
-
-        this.sendToolListChanged();
-      },
-    };
-    this._registeredTools[name] = registeredTool;
-
-    this._onCapabilityChange.notify(() => ({
-      serverInfo: this.server.getVersion(),
-      capabilityType: "tool",
-      capabilityName: name,
-      action: "added",
-    }));
-
-    this.setToolRequestHandlers();
-    this.sendToolListChanged()
-
-    return registeredTool
+      inputSchema,
+      outputSchema,
+      annotations,
+      cb as ToolCallback<ZodRawShape | undefined, ZodRawShape | undefined>
+    );
   }
 
   /**
@@ -1438,147 +993,50 @@ export class McpServer {
     }
 
     const cb = rest[0] as PromptCallback<PromptArgsRawShape | undefined>;
-    const registeredPrompt: RegisteredPrompt = {
+    const registeredPrompt = this._createRegisteredPrompt(
+      name,
+      undefined,
       description,
-      argsSchema: argsSchema === undefined ? undefined : z.object(argsSchema),
-      callback: cb,
-      enabled: true,
-      disable: () => {
-        if (!registeredPrompt.enabled) return;
-
-        this._onCapabilityChange.notify(() => ({
-          serverInfo: this.server.getVersion(),
-          capabilityType: "prompt",
-          capabilityName: name,
-          action: "disabled",
-        }));
-
-        registeredPrompt.update({ enabled: false });
-      },
-      enable: () => {
-        if (registeredPrompt.enabled) return;
-
-        this._onCapabilityChange.notify(() => ({
-          serverInfo: this.server.getVersion(),
-          capabilityType: "prompt",
-          capabilityName: name,
-          action: "enabled",
-        }));
-
-        registeredPrompt.update({ enabled: true });
-      },
-      remove: () => {
-        if (name === null) return;
-
-        this._onCapabilityChange.notify(() => ({
-          serverInfo: this.server.getVersion(),
-          capabilityType: "prompt",
-          capabilityName: name,
-          action: "removed",
-        }));
-
-        registeredPrompt.update({ name: null });
-      },
-      update: (updates) => {
-        let added = false;
-        let removed = false;
-        let updated = false;
-        let enabled = false;
-
-        if (typeof updates.name !== "undefined" && updates.name !== name) {
-          removed = true;
-          delete this._registeredPrompts[name];
-
-          if (updates.name) {
-            added = true;
-            this._registeredPrompts[updates.name!] = registeredPrompt;
-          }
-        }
-
-        if (
-          typeof updates.description !== "undefined" &&
-          updates.description !== description
-        ) {
-          updated = true;
-          registeredPrompt.description = updates.description;
-        }
-
-        if (
-          typeof updates.argsSchema !== "undefined" &&
-          updates.argsSchema !== argsSchema
-        ) {
-          updated = true;
-          registeredPrompt.argsSchema = z.object(updates.argsSchema);
-        }
-
-        if (
-          typeof updates.callback !== "undefined" &&
-          updates.callback !== registeredPrompt.callback
-        ) {
-          updated = true;
-          registeredPrompt.callback = updates.callback;
-        }
-
-        if (
-          typeof updates.enabled !== "undefined" &&
-          updates.enabled !== registeredPrompt.enabled
-        ) {
-          enabled = true;
-          registeredPrompt.enabled = updates.enabled;
-        }
-
-        if (removed) {
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "prompt",
-            capabilityName: name,
-            action: "removed",
-          }));
-        }
-
-        if (added) {
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "prompt",
-            capabilityName: updates.name || name,
-            action: "added",
-          }));
-        }
-
-        if (updated) {
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "prompt",
-            capabilityName: updates.name || name,
-            action: "updated",
-          }));
-        }
-
-        if (enabled) {
-          this._onCapabilityChange.notify(() => ({
-            serverInfo: this.server.getVersion(),
-            capabilityType: "prompt",
-            capabilityName: updates.name || name,
-            action: registeredPrompt.enabled ? "enabled" : "disabled",
-          }));
-        }
-
-        this.sendPromptListChanged();
-      },
-    };
-    this._registeredPrompts[name] = registeredPrompt;
-
-    this._onCapabilityChange.notify(() => ({
-      serverInfo: this.server.getVersion(),
-      capabilityType: "prompt",
-      capabilityName: name,
-      action: "added",
-    }));
+      argsSchema,
+      cb
+    );
 
     this.setPromptRequestHandlers();
     this.sendPromptListChanged()
 
     return registeredPrompt
+  }
+
+  /**
+   * Registers a prompt with a config object and callback.
+   */
+  registerPrompt<Args extends PromptArgsRawShape>(
+    name: string,
+    config: {
+      title?: string;
+      description?: string;
+      argsSchema?: Args;
+    },
+    cb: PromptCallback<Args>
+  ): RegisteredPrompt {
+    if (this._registeredPrompts[name]) {
+      throw new Error(`Prompt ${name} is already registered`);
+    }
+
+    const { title, description, argsSchema } = config;
+
+    const registeredPrompt = this._createRegisteredPrompt(
+      name,
+      title,
+      description,
+      argsSchema,
+      cb as PromptCallback<PromptArgsRawShape | undefined>
+    );
+
+    this.setPromptRequestHandlers();
+    this.sendPromptListChanged()
+
+    return registeredPrompt;
   }
 
   /**
@@ -1622,6 +1080,9 @@ export class McpServer {
  */
 export type CompleteResourceTemplateCallback = (
   value: string,
+  context?: {
+    arguments?: Record<string, string>;
+  },
 ) => string[] | Promise<string[]>;
 
 /**
@@ -1678,32 +1139,89 @@ export class ResourceTemplate {
 }
 
 /**
+ * Type helper to create a strongly-typed CallToolResult with structuredContent
+ */
+type TypedCallToolResult<OutputArgs extends undefined | ZodRawShape> =
+  OutputArgs extends ZodRawShape
+    ? CallToolResult & {
+        structuredContent?: z.objectOutputType<OutputArgs, ZodTypeAny>;
+      }
+    : CallToolResult;
+
+/**
  * Callback for a tool handler registered with Server.tool().
  *
  * Parameters will include tool arguments, if applicable, as well as other request handler context.
+ *
+ * The callback should return:
+ * - `structuredContent` if the tool has an outputSchema defined
+ * - `content` if the tool does not have an outputSchema
+ * - Both fields are optional but typically one should be provided
  */
-export type ToolCallback<Args extends undefined | ZodRawShape = undefined> =
-  Args extends ZodRawShape
-    ? (
-        args: z.objectOutputType<Args, ZodTypeAny>,
-        extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
-      ) => CallToolResult | Promise<CallToolResult>
-    : (extra: RequestHandlerExtra<ServerRequest, ServerNotification>) => CallToolResult | Promise<CallToolResult>;
+export type ToolCallback<
+  InputArgs extends undefined | ZodRawShape = undefined,
+  OutputArgs extends undefined | ZodRawShape = undefined
+> = InputArgs extends ZodRawShape
+  ? (
+      args: z.objectOutputType<InputArgs, ZodTypeAny>,
+      extra: RequestHandlerExtra<ServerRequest, ServerNotification>
+    ) =>
+      | TypedCallToolResult<OutputArgs>
+      | Promise<TypedCallToolResult<OutputArgs>>
+  : (
+      extra: RequestHandlerExtra<ServerRequest, ServerNotification>
+    ) =>
+      | TypedCallToolResult<OutputArgs>
+      | Promise<TypedCallToolResult<OutputArgs>>;
 
 export type RegisteredTool = {
+  title?: string;
   description?: string;
   inputSchema?: AnyZodObject;
-  callback: ToolCallback<undefined | ZodRawShape>;
+  outputSchema?: AnyZodObject;
+  annotations?: ToolAnnotations;
+  callback: ToolCallback<ZodRawShape | undefined, ZodRawShape | undefined>;
   enabled: boolean;
   enable(): void;
   disable(): void;
-  update<Args extends ZodRawShape>(updates: { name?: string | null, description?: string, paramsSchema?: Args, callback?: ToolCallback<Args>, enabled?: boolean }): void
-  remove(): void
+  update<
+    InputArgs extends ZodRawShape,
+    OutputArgs extends ZodRawShape
+  >(updates: {
+    name?: string | null;
+    title?: string;
+    description?: string;
+    paramsSchema?: InputArgs;
+    outputSchema?: OutputArgs;
+    annotations?: ToolAnnotations;
+    callback?: ToolCallback<InputArgs, OutputArgs>
+    enabled?: boolean
+  }): void;
+  remove(): void;
 };
 
 const EMPTY_OBJECT_JSON_SCHEMA = {
   type: "object" as const,
+  properties: {},
 };
+
+// Helper to check if an object is a Zod schema (ZodRawShape)
+function isZodRawShape(obj: unknown): obj is ZodRawShape {
+  if (typeof obj !== "object" || obj === null) return false;
+
+  const isEmptyObject = Object.keys(obj).length === 0;
+
+  // Check if object is empty or at least one property is a ZodType instance
+  // Note: use heuristic check to avoid instanceof failure across different Zod versions
+  return isEmptyObject || Object.values(obj as object).some(isZodTypeLike);
+}
+
+function isZodTypeLike(value: unknown): value is ZodType {
+  return value !== null &&
+    typeof value === 'object' &&
+    'parse' in value && typeof value.parse === 'function' &&
+    'safeParse' in value && typeof value.safeParse === 'function';
+}
 
 /**
  * Additional, optional information for annotating a resource.
@@ -1727,12 +1245,13 @@ export type ReadResourceCallback = (
 
 export type RegisteredResource = {
   name: string;
+  title?: string;
   metadata?: ResourceMetadata;
   readCallback: ReadResourceCallback;
   enabled: boolean;
   enable(): void;
   disable(): void;
-  update(updates: { name?: string, uri?: string | null, metadata?: ResourceMetadata, callback?: ReadResourceCallback, enabled?: boolean }): void
+  update(updates: { name?: string, title?: string, uri?: string | null, metadata?: ResourceMetadata, callback?: ReadResourceCallback, enabled?: boolean }): void
   remove(): void
 };
 
@@ -1747,38 +1266,40 @@ export type ReadResourceTemplateCallback = (
 
 export type RegisteredResourceTemplate = {
   resourceTemplate: ResourceTemplate;
+  title?: string;
   metadata?: ResourceMetadata;
   readCallback: ReadResourceTemplateCallback;
   enabled: boolean;
   enable(): void;
   disable(): void;
-  update(updates: { name?: string | null, template?: ResourceTemplate, metadata?: ResourceMetadata, callback?: ReadResourceTemplateCallback, enabled?: boolean  }): void
+  update(updates: { name?: string | null, title?: string, template?: ResourceTemplate, metadata?: ResourceMetadata, callback?: ReadResourceTemplateCallback, enabled?: boolean }): void
   remove(): void
 };
 
 type PromptArgsRawShape = {
   [k: string]:
-    | ZodType<string, ZodTypeDef, string>
-    | ZodOptional<ZodType<string, ZodTypeDef, string>>;
+  | ZodType<string, ZodTypeDef, string>
+  | ZodOptional<ZodType<string, ZodTypeDef, string>>;
 };
 
 export type PromptCallback<
   Args extends undefined | PromptArgsRawShape = undefined,
 > = Args extends PromptArgsRawShape
   ? (
-      args: z.objectOutputType<Args, ZodTypeAny>,
-      extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
-    ) => GetPromptResult | Promise<GetPromptResult>
+    args: z.objectOutputType<Args, ZodTypeAny>,
+    extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
+  ) => GetPromptResult | Promise<GetPromptResult>
   : (extra: RequestHandlerExtra<ServerRequest, ServerNotification>) => GetPromptResult | Promise<GetPromptResult>;
 
 export type RegisteredPrompt = {
+  title?: string;
   description?: string;
   argsSchema?: ZodObject<PromptArgsRawShape>;
   callback: PromptCallback<undefined | PromptArgsRawShape>;
   enabled: boolean;
   enable(): void;
   disable(): void;
-  update<Args extends PromptArgsRawShape>(updates: { name?: string | null, description?: string, argsSchema?: Args, callback?: PromptCallback<Args>, enabled?: boolean }): void
+  update<Args extends PromptArgsRawShape>(updates: { name?: string | null, title?: string, description?: string, argsSchema?: Args, callback?: PromptCallback<Args>, enabled?: boolean }): void
   remove(): void
 };
 
@@ -1810,72 +1331,3 @@ const EMPTY_COMPLETION_RESULT: CompleteResult = {
     hasMore: false,
   },
 };
-
-/**
- * Represents events emitted when capabilities (tools, resources, prompts) change state or are invoked.
- *
- * These events allow tracking the lifecycle and usage of all capabilities registered with an McpServer.
- * Events include capability registration, updates, invocation, completion, and errors.
- *
- * Each capability type (tool, resource, prompt) maintains its own sequence of invocation indexes.
- * The invocationIndex can be used to correlate "invoked" events with their corresponding
- * "completed" or "error" events for the same capability type.
- */
-export type CapabilityEvent = {
-  /** Information about the server that generated this event */
-  readonly serverInfo: { readonly name: string; readonly version: string };
-  /** The type of capability this event relates to */
-  readonly capabilityType: "resource" | "tool" | "prompt";
-  /** The name (or URI for resources) of the specific capability */
-  readonly capabilityName: string;
-} & (
-  | {
-      /**
-       * Lifecycle events for capability registration and status changes.
-       * - "added": The capability was registered
-       * - "updated": The capability was modified
-       * - "removed": The capability was unregistered
-       * - "enabled": The capability was enabled
-       * - "disabled": The capability was disabled
-       */
-      readonly action: "added" | "updated" | "removed" | "enabled" | "disabled";
-    }
-  | {
-      /** Emitted when a capability is invoked */
-      readonly action: "invoked";
-      /**
-       * Monotonically increasing index for each invocation, per capability type.
-       * This index can be used to correlate this "invoked" event with a later
-       * "completed" or "error" event with the same capabilityType and invocationIndex.
-       */
-      readonly invocationIndex: number;
-      /** The arguments passed to the capability, if any */
-      readonly arguments?: unknown;
-    }
-  | {
-      /** Emitted when a capability invocation completes successfully */
-      readonly action: "completed";
-      /**
-       * The invocationIndex from the corresponding "invoked" event.
-       * This allows correlating the completion with its invocation.
-       */
-      readonly invocationIndex: number;
-      /** The result returned by the capability, if any */
-      readonly result?: unknown;
-      /** The duration of the operation in milliseconds, measured from invocation to completion */
-      readonly durationMs?: number;
-    }
-  | {
-      /** Emitted when a capability invocation fails with an error */
-      readonly action: "error";
-      /**
-       * The invocationIndex from the corresponding "invoked" event.
-       * This allows correlating the error with its invocation.
-       */
-      readonly invocationIndex: number;
-      /** The error that occurred during capability execution */
-      readonly error: unknown;
-      /** The duration from invocation to error in milliseconds */
-      readonly durationMs?: number;
-    }
-);

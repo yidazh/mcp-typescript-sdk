@@ -1,12 +1,24 @@
 import { StreamableHTTPClientTransport, StreamableHTTPReconnectionOptions } from "./streamableHttp.js";
+import { OAuthClientProvider, UnauthorizedError } from "./auth.js";
 import { JSONRPCMessage } from "../types.js";
 
 
 describe("StreamableHTTPClientTransport", () => {
   let transport: StreamableHTTPClientTransport;
+  let mockAuthProvider: jest.Mocked<OAuthClientProvider>;
 
   beforeEach(() => {
-    transport = new StreamableHTTPClientTransport(new URL("http://localhost:1234/mcp"));
+    mockAuthProvider = {
+      get redirectUrl() { return "http://localhost/callback"; },
+      get clientMetadata() { return { redirect_uris: ["http://localhost/callback"] }; },
+      clientInformation: jest.fn(() => ({ client_id: "test-client-id", client_secret: "test-client-secret" })),
+      tokens: jest.fn(),
+      saveTokens: jest.fn(),
+      redirectToAuthorization: jest.fn(),
+      saveCodeVerifier: jest.fn(),
+      codeVerifier: jest.fn(),
+    };
+    transport = new StreamableHTTPClientTransport(new URL("http://localhost:1234/mcp"), { authProvider: mockAuthProvider });
     jest.spyOn(global, "fetch");
   });
 
@@ -464,6 +476,37 @@ describe("StreamableHTTPClientTransport", () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("should always send specified custom headers (Headers class)", async () => {
+    const requestInit = {
+      headers: new Headers({
+        "X-Custom-Header": "CustomValue"
+      })
+    };
+    transport = new StreamableHTTPClientTransport(new URL("http://localhost:1234/mcp"), {
+      requestInit: requestInit
+    });
+
+    let actualReqInit: RequestInit = {};
+
+    ((global.fetch as jest.Mock)).mockImplementation(
+      async (_url, reqInit) => {
+        actualReqInit = reqInit;
+        return new Response(null, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }
+    );
+
+    await transport.start();
+
+    await transport["_startOrAuthSse"]({});
+    expect((actualReqInit.headers as Headers).get("x-custom-header")).toBe("CustomValue");
+
+    (requestInit.headers as Headers).set("X-Custom-Header","SecondCustomValue");
+
+    await transport.send({ jsonrpc: "2.0", method: "test", params: {} } as JSONRPCMessage);
+    expect((actualReqInit.headers as Headers).get("x-custom-header")).toBe("SecondCustomValue");
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
 
   it("should have exponential backoff with configurable maxRetries", () => {
     // This test verifies the maxRetries and backoff calculation directly
@@ -497,4 +540,27 @@ describe("StreamableHTTPClientTransport", () => {
     expect(getDelay(10)).toBe(5000);
   });
 
+  it("attempts auth flow on 401 during POST request", async () => {
+    const message: JSONRPCMessage = {
+      jsonrpc: "2.0",
+      method: "test",
+      params: {},
+      id: "test-id"
+    };
+
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: "Unauthorized",
+        headers: new Headers()
+      })
+      .mockResolvedValue({
+        ok: false,
+        status: 404
+      });
+
+    await expect(transport.send(message)).rejects.toThrow(UnauthorizedError);
+    expect(mockAuthProvider.redirectToAuthorization.mock.calls).toHaveLength(1);
+  });
 });

@@ -8,6 +8,9 @@ import {
   ClientCapabilities,
   CreateMessageRequest,
   CreateMessageResultSchema,
+  ElicitRequest,
+  ElicitResult,
+  ElicitResultSchema,
   EmptyResultSchema,
   Implementation,
   InitializedNotificationSchema,
@@ -18,6 +21,8 @@ import {
   ListRootsRequest,
   ListRootsResultSchema,
   LoggingMessageNotification,
+  McpError,
+  ErrorCode,
   Notification,
   Request,
   ResourceUpdatedNotification,
@@ -28,6 +33,7 @@ import {
   ServerResult,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from "../types.js";
+import Ajv from "ajv";
 
 export type ServerOptions = ProtocolOptions & {
   /**
@@ -105,13 +111,6 @@ export class Server<
   }
 
   /**
-   * The server's name and version.
-   */
-  getVersion(): { readonly name: string; readonly version: string } {
-    return this._serverInfo;
-  }
-
-  /**
    * Registers new capabilities. This can only be called before connecting to a transport.
    *
    * The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
@@ -132,6 +131,14 @@ export class Server<
         if (!this._clientCapabilities?.sampling) {
           throw new Error(
             `Client does not support sampling (required for ${method})`,
+          );
+        }
+        break;
+
+      case "elicitation/create":
+        if (!this._clientCapabilities?.elicitation) {
+          throw new Error(
+            `Client does not support elicitation (required for ${method})`,
           );
         }
         break;
@@ -258,10 +265,12 @@ export class Server<
     this._clientCapabilities = request.params.capabilities;
     this._clientVersion = request.params.clientInfo;
 
-    return {
-      protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion)
+    const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion)
         ? requestedVersion
-        : LATEST_PROTOCOL_VERSION,
+        : LATEST_PROTOCOL_VERSION;
+
+    return {
+      protocolVersion,
       capabilities: this.getCapabilities(),
       serverInfo: this._serverInfo,
       ...(this._instructions && { instructions: this._instructions }),
@@ -299,6 +308,44 @@ export class Server<
       CreateMessageResultSchema,
       options,
     );
+  }
+
+  async elicitInput(
+    params: ElicitRequest["params"],
+    options?: RequestOptions,
+  ): Promise<ElicitResult> {
+    const result = await this.request(
+      { method: "elicitation/create", params },
+      ElicitResultSchema,
+      options,
+    );
+
+    // Validate the response content against the requested schema if action is "accept"
+    if (result.action === "accept" && result.content) {
+      try {
+        const ajv = new Ajv();
+        
+        const validate = ajv.compile(params.requestedSchema);
+        const isValid = validate(result.content);
+        
+        if (!isValid) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `Elicitation response content does not match requested schema: ${ajv.errorsText(validate.errors)}`,
+          );
+        }
+      } catch (error) {
+        if (error instanceof McpError) {
+          throw error;
+        }
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Error validating elicitation response: ${error}`,
+        );
+      }
+    }
+
+    return result;
   }
 
   async listRoots(
