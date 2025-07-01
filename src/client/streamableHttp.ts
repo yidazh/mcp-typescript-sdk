@@ -423,7 +423,7 @@ const response = await (this._fetch ?? fetch)(this._url, {
         signal: this._abortController?.signal,
       };
 
-      const response = await (this._fetch ?? fetch)(this._url, init);
+const response = await (this._fetch ?? fetch)(this._url, init);
 
       // Handle session ID received during initialization
       const sessionId = response.headers.get("mcp-session-id");
