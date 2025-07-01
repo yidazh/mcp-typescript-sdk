@@ -251,7 +251,7 @@ const fetchImpl = (this?._eventSourceInit?.fetch ?? this._fetch ?? fetch) as typ
         signal: this._abortController?.signal,
       };
 
-      const response = await (this._fetch ?? fetch)(this._endpoint, init);
+const response = await (this._fetch ?? fetch)(this._endpoint, init);
       if (!response.ok) {
         if (response.status === 401 && this._authProvider) {
 
