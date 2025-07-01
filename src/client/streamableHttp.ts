@@ -529,7 +529,7 @@ const response = await (this._fetch ?? fetch)(this._url, init);
         signal: this._abortController?.signal,
       };
 
-      const response = await (this._fetch ?? fetch)(this._url, init);
+const response = await (this._fetch ?? fetch)(this._url, init);
 
       // We specifically handle 405 as a valid response according to the spec,
       // meaning the server does not support explicit session termination
