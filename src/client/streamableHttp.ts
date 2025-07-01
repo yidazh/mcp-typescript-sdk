@@ -1,9 +1,7 @@
-import { Transport } from "../shared/transport.js";
+import { Transport, FetchLike } from "../shared/transport.js";
 import { isInitializedNotification, isJSONRPCRequest, isJSONRPCResponse, JSONRPCMessage, JSONRPCMessageSchema } from "../types.js";
 import { auth, AuthResult, extractResourceMetadataUrl, OAuthClientProvider, UnauthorizedError } from "./auth.js";
 import { EventSourceParserStream } from "eventsource-parser/stream";
-
-export type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 
 // Default reconnection options for StreamableHTTP connections
 const DEFAULT_STREAMABLE_HTTP_RECONNECTION_OPTIONS: StreamableHTTPReconnectionOptions = {
@@ -25,7 +23,7 @@ export class StreamableHTTPError extends Error {
 /**
  * Options for starting or authenticating an SSE connection
  */
-interface StartSSEOptions {
+export interface StartSSEOptions {
   /**
    * The resumption token used to continue long-running requests that were interrupted.
    *
@@ -260,15 +258,15 @@ const response = await (this._fetch ?? fetch)(this._url, {
 
     private _normalizeHeaders(headers: HeadersInit | undefined): Record<string, string> {
     if (!headers) return {};
-    
+
     if (headers instanceof Headers) {
       return Object.fromEntries(headers.entries());
     }
-    
+
     if (Array.isArray(headers)) {
       return Object.fromEntries(headers);
     }
-    
+
     return { ...headers as Record<string, string> };
   }
 

@@ -1,9 +1,7 @@
 import { EventSource, type ErrorEvent, type EventSourceInit } from "eventsource";
-import { Transport } from "../shared/transport.js";
+import { Transport, FetchLike } from "../shared/transport.js";
 import { JSONRPCMessage, JSONRPCMessageSchema } from "../types.js";
 import { auth, AuthResult, extractResourceMetadataUrl, OAuthClientProvider, UnauthorizedError } from "./auth.js";
-
-export type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 
 export class SseError extends Error {
   constructor(

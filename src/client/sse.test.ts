@@ -289,7 +289,9 @@ describe("SSEClientTransport", () => {
 
       await transport.send(message);
 
-      expect(fetchWithAuth).toHaveBeenCalled();
+      expect(fetchWithAuth).toHaveBeenCalledTimes(2);
+      expect(lastServerRequest.method).toBe("POST");
+      expect(lastServerRequest.headers.authorization).toBe(authToken);
     });
 
     it("passes custom headers to fetch requests", async () => {

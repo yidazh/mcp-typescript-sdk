@@ -1,4 +1,4 @@
-import { StreamableHTTPClientTransport, StreamableHTTPReconnectionOptions } from "./streamableHttp.js";
+import { StreamableHTTPClientTransport, StreamableHTTPReconnectionOptions, StartSSEOptions } from "./streamableHttp.js";
 import { OAuthClientProvider, UnauthorizedError } from "./auth.js";
 import { JSONRPCMessage } from "../types.js";
 
@@ -461,7 +461,7 @@ describe("StreamableHTTPClientTransport", () => {
     transport = new StreamableHTTPClientTransport(new URL("http://localhost:1234/mcp"), { fetch: fetchWithAuth });
 
     await transport.start();
-    await (transport as unknown as { _startOrAuthSse: (opts: any) => Promise<void> })._startOrAuthSse({});
+    await (transport as unknown as { _startOrAuthSse: (opts: StartSSEOptions) => Promise<void> })._startOrAuthSse({});
 
     await transport.send({ jsonrpc: "2.0", method: "test", params: {}, id: "1" } as JSONRPCMessage);
 
@@ -559,7 +559,7 @@ describe("StreamableHTTPClientTransport", () => {
     // Second retry - should double (2^1 * 100 = 200)
     expect(getDelay(1)).toBe(200);
 
-    // Third retry - should double again (2^2 * 100 = 400) 
+    // Third retry - should double again (2^2 * 100 = 400)
     expect(getDelay(2)).toBe(400);
 
     // Fourth retry - should double again (2^3 * 100 = 800)
