@@ -209,7 +209,7 @@ export class StreamableHTTPClientTransport implements Transport {
         headers.set("last-event-id", resumptionToken);
       }
 
-      const response = await (this._fetch ?? fetch)(this._url, {
+const response = await (this._fetch ?? fetch)(this._url, {
         method: "GET",
         headers,
         signal: this._abortController?.signal,
