@@ -74,6 +74,7 @@ test("should read messages", async () => {
   await client.close();
 });
 
+
 test("should properly set default environment variables in spawned process", async () => {
   await envAsyncLocalStorage.run({ env: {} }, async () => {
   const client = new StdioClientTransport(serverParameters);
@@ -128,4 +129,13 @@ test("should override default environment variables with custom ones", async () 
     }
     }
   });
+
+test("should return child process pid", async () => {
+  const client = new StdioClientTransport(serverParameters);
+
+  await client.start();
+  expect(client.pid).not.toBeNull();
+  await client.close();
+  expect(client.pid).toBeNull();
+
 });

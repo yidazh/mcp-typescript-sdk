@@ -267,6 +267,7 @@ describe("tool()", () => {
     expect(result.tools[0].name).toBe("test");
     expect(result.tools[0].inputSchema).toEqual({
       type: "object",
+      properties: {},
     });
 
     // Adding the tool before the connection was established means no notification was sent
@@ -1311,7 +1312,7 @@ describe("tool()", () => {
           resultType: "structured",
           // Missing required 'timestamp' field
           someExtraField: "unexpected" // Extra field not in schema
-        },
+        } as unknown as { processedInput: string; resultType: string; timestamp: string }, // Type assertion to bypass TypeScript validation for testing purposes
       })
     );
 
