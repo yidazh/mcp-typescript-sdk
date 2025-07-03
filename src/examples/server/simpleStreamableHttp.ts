@@ -499,7 +499,12 @@ const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 // MCP POST endpoint with optional auth
 const mcpPostHandler = async (req: Request, res: Response) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
-  console.log(sessionId ? `Received MCP request for session: ${sessionId}` : 'Received MCP request:', req.body);
+  if (sessionId) {
+    console.log(`Received MCP request for session: ${sessionId}`);
+  } else {
+    console.log('Request body:', req.body);
+  }
+
   if (useOAuth && req.auth) {
     console.log('Authenticated user:', req.auth);
   }
