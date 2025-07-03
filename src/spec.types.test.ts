@@ -1,9 +1,13 @@
-// import ts from 'typescript';
-
 import * as SDKTypes from "./types.js";
 import * as SpecTypes from "./spec.types.js";
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 // Deep version that recursively removes index signatures (caused by ZodObject.passthrough()) and turns unknowns into `object | undefined`
+// TODO: make string index mapping tighter
+// TODO: split into multiple transformations (e.g. RemovePassthrough) and only use the ones needed for each type.
 type DeepKnownKeys<T> = T extends object
   ? T extends Array<infer U>
     ? Array<DeepKnownKeys<U>>
