@@ -206,12 +206,12 @@ const getServer = () => {
               },
             ],
           };
-        } else if (result.action === 'reject') {
+        } else if (result.action === 'decline') {
           return {
             content: [
               {
                 type: 'text',
-                text: `No information was collected. User rejected ${infoType} information request.`,
+                text: `No information was collected. User declined ${infoType} information request.`,
               },
             ],
           };
@@ -433,7 +433,7 @@ if (useOAuth) {
   const mcpServerUrl = new URL(`http://localhost:${MCP_PORT}/mcp`);
   const authServerUrl = new URL(`http://localhost:${AUTH_PORT}`);
 
-  const oauthMetadata: OAuthMetadata = setupAuthServer({authServerUrl, mcpServerUrl, strictResource: strictOAuth});
+  const oauthMetadata: OAuthMetadata = setupAuthServer({ authServerUrl, mcpServerUrl, strictResource: strictOAuth });
 
   const tokenVerifier = {
     verifyAccessToken: async (token: string) => {
@@ -499,7 +499,7 @@ const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 // MCP POST endpoint with optional auth
 const mcpPostHandler = async (req: Request, res: Response) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
-  console.log(sessionId? `Received MCP request for session: ${sessionId}`: 'Received MCP request:', req.body);
+  console.log(sessionId ? `Received MCP request for session: ${sessionId}` : 'Received MCP request:', req.body);
   if (useOAuth && req.auth) {
     console.log('Authenticated user:', req.auth);
   }
