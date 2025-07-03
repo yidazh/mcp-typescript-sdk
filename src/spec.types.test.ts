@@ -12,12 +12,8 @@ type RemovePassthrough<T> = T extends object
   ? T extends Array<infer U>
     ? Array<RemovePassthrough<U>>
     : T extends Function
-    ? T
-    : {
-        [K in keyof T as string extends K ? never : number extends K ? never : K]: RemovePassthrough<T[K]>;
-      }
-  : unknown extends T
-  ? (object | undefined)
+        ? T
+        : {[K in keyof T as string extends K ? never : K]: RemovePassthrough<T[K]>}
   : T;
 
 function checkCancelledNotification(
