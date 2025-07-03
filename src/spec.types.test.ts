@@ -42,7 +42,7 @@ function checkImplementation(
   spec = sdk;
 } 
 function checkProgressNotification(
-  sdk: RemovePassthrough<SDKTypes.ProgressNotification>,
+  sdk: SDKTypes.ProgressNotification,
   spec: SpecTypes.ProgressNotification
 ) {
   sdk = spec;
