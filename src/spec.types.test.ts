@@ -2,8 +2,8 @@
  * This contains:
  * - Static type checks to verify the Spec's types are compatible with the SDK's types
  *   (mutually assignable, w/ slight affordances to get rid of ZodObject.passthrough() index signatures, etc)
- * - Runtime checks to verify all Spec types have a static check
- *   (a few don't have SDK types, see TODOs in this file)
+ * - Runtime checks to verify each Spec type has a static check
+ *   (note: a few don't have SDK types, see TODOs in this file)
  */
 import * as SDKTypes from "./types.js";
 import * as SpecTypes from "./spec.types.js";
@@ -685,6 +685,7 @@ function checkServerNotification(
 //   spec = sdk;
 // }
 
+// This file is .gitignore'd, and fetched by `npm run fetch:spec-types` (called by `npm run test`)
 const SPEC_TYPES_FILE  = 'src/spec.types.ts';
 const THIS_SOURCE_FILE = 'src/spec.types.test.ts';
 
