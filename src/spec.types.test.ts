@@ -7,14 +7,14 @@ import * as SpecTypes from "./spec.types.js";
 
 // Deep version that recursively removes index signatures (caused by ZodObject.passthrough()) and turns unknowns into `object | undefined`
 // TODO: make string index mapping tighter
-// TODO: split into multiple transformations (e.g. RemovePassthrough) and only use the ones needed for each type.
-type DeepKnownKeys<T> = T extends object
+// TODO: split into multiple transformations if needed
+type RemovePassthrough<T> = T extends object
   ? T extends Array<infer U>
-    ? Array<DeepKnownKeys<U>>
+    ? Array<RemovePassthrough<U>>
     : T extends Function
     ? T
     : {
-        [K in keyof T as string extends K ? never : number extends K ? never : K]: DeepKnownKeys<T[K]>;
+        [K in keyof T as string extends K ? never : number extends K ? never : K]: RemovePassthrough<T[K]>;
       }
   : unknown extends T
   ? (object | undefined)
@@ -28,22 +28,22 @@ function checkCancelledNotification(
   spec = sdk;
 }
 function checkBaseMetadata(
-  sdk: SDKTypes.BaseMetadata,
-  spec: DeepKnownKeys<SpecTypes.BaseMetadata>
+  sdk: RemovePassthrough<SDKTypes.BaseMetadata>,
+  spec: SpecTypes.BaseMetadata
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkImplementation(
-  sdk: SDKTypes.Implementation,
-  spec: DeepKnownKeys<SpecTypes.Implementation>
+  sdk: RemovePassthrough<SDKTypes.Implementation>,
+  spec: SpecTypes.Implementation
 ) {
   sdk = spec;
   spec = sdk;
 } 
 function checkProgressNotification(
-  sdk: SDKTypes.ProgressNotification,
-  spec: DeepKnownKeys<SpecTypes.ProgressNotification>
+  sdk: RemovePassthrough<SDKTypes.ProgressNotification>,
+  spec: SpecTypes.ProgressNotification
 ) {
   sdk = spec;
   spec = sdk;
@@ -85,29 +85,44 @@ function checkListRootsRequest(
   spec = sdk;
 }
 function checkListRootsResult(
-  sdk: SDKTypes.ListRootsResult,
-  spec: DeepKnownKeys<SpecTypes.ListRootsResult>
+  sdk: RemovePassthrough<SDKTypes.ListRootsResult>,
+  spec: SpecTypes.ListRootsResult
 ) {
   sdk = spec;
   spec = sdk;
 }
-function checkRoot(sdk: SDKTypes.Root, spec: DeepKnownKeys<SpecTypes.Root>) {
+function checkRoot(
+  sdk: RemovePassthrough<SDKTypes.Root>,
+  spec: SpecTypes.Root
+) {
   sdk = spec;
   spec = sdk;
 }
-function checkElicitRequest(sdk: SDKTypes.ElicitRequest, spec: DeepKnownKeys<SpecTypes.ElicitRequest>) {
+function checkElicitRequest(
+  sdk: RemovePassthrough<SDKTypes.ElicitRequest>,
+  spec: SpecTypes.ElicitRequest
+) {
   sdk = spec;
   spec = sdk;
 }
-function checkElicitResult(sdk: SDKTypes.ElicitResult, spec: DeepKnownKeys<SpecTypes.ElicitResult>) {
+function checkElicitResult(
+  sdk: RemovePassthrough<SDKTypes.ElicitResult>,
+  spec: SpecTypes.ElicitResult
+) {
   sdk = spec;
   spec = sdk;
 }
-function checkCompleteRequest(sdk: SDKTypes.CompleteRequest, spec: DeepKnownKeys<SpecTypes.CompleteRequest>) {
+function checkCompleteRequest(
+  sdk: RemovePassthrough<SDKTypes.CompleteRequest>,
+  spec: SpecTypes.CompleteRequest
+) {
   sdk = spec;
   spec = sdk;
 }
-function checkCompleteResult(sdk: SDKTypes.CompleteResult, spec: SpecTypes.CompleteResult) {
+function checkCompleteResult(
+  sdk: SDKTypes.CompleteResult,
+  spec: SpecTypes.CompleteResult
+) {
   sdk = spec;
   spec = sdk;
 }
@@ -118,7 +133,10 @@ function checkProgressToken(
   sdk = spec;
   spec = sdk;
 }
-function checkCursor(sdk: SDKTypes.Cursor, spec: SpecTypes.Cursor) {
+function checkCursor(
+  sdk: SDKTypes.Cursor,
+  spec: SpecTypes.Cursor
+) {
   sdk = spec;
   spec = sdk;
 }
@@ -200,36 +218,36 @@ function checkServerResult(
   spec = sdk;
 }
 function checkResourceTemplateReference(
-  sdk: SDKTypes.ResourceTemplateReference,
-  spec: DeepKnownKeys<SpecTypes.ResourceTemplateReference>
+  sdk: RemovePassthrough<SDKTypes.ResourceTemplateReference>,
+  spec: SpecTypes.ResourceTemplateReference
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkPromptReference(
-  sdk: SDKTypes.PromptReference,
-  spec: DeepKnownKeys<SpecTypes.PromptReference>
+  sdk: RemovePassthrough<SDKTypes.PromptReference>,
+  spec: SpecTypes.PromptReference
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkResourceReference(
-  sdk: SDKTypes.ResourceReference,
-  spec: DeepKnownKeys<SpecTypes.ResourceTemplateReference>
+  sdk: RemovePassthrough<SDKTypes.ResourceReference>,
+  spec: SpecTypes.ResourceTemplateReference
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkToolAnnotations(
-  sdk: SDKTypes.ToolAnnotations,
-  spec: DeepKnownKeys<SpecTypes.ToolAnnotations>
+  sdk: RemovePassthrough<SDKTypes.ToolAnnotations>,
+  spec: SpecTypes.ToolAnnotations
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkTool(
-  sdk: SDKTypes.Tool,
-  spec: DeepKnownKeys<SpecTypes.Tool>
+  sdk: RemovePassthrough<SDKTypes.Tool>,
+  spec: SpecTypes.Tool
 ) {
   sdk = spec;
   spec = sdk;
@@ -242,15 +260,15 @@ function checkListToolsRequest(
   spec = sdk;
 }
 function checkListToolsResult(
-  sdk: SDKTypes.ListToolsResult,
-  spec: DeepKnownKeys<SpecTypes.ListToolsResult>
+  sdk: RemovePassthrough<SDKTypes.ListToolsResult>,
+  spec: SpecTypes.ListToolsResult
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkCallToolResult(
-  sdk: SDKTypes.CallToolResult,
-  spec: DeepKnownKeys<SpecTypes.CallToolResult>
+  sdk: RemovePassthrough<SDKTypes.CallToolResult>,
+  spec: SpecTypes.CallToolResult
 ) {
   sdk = spec;
   spec = sdk;
@@ -298,15 +316,15 @@ function checkResourceUpdatedNotification(
   spec = sdk;
 }
 function checkSamplingMessage(
-  sdk: SDKTypes.SamplingMessage,
-  spec: DeepKnownKeys<SpecTypes.SamplingMessage>
+  sdk: RemovePassthrough<SDKTypes.SamplingMessage>,
+  spec: SpecTypes.SamplingMessage
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkCreateMessageResult(
-  sdk: SDKTypes.CreateMessageResult,
-  spec: DeepKnownKeys<SpecTypes.CreateMessageResult>
+  sdk: RemovePassthrough<SDKTypes.CreateMessageResult>,
+  spec: SpecTypes.CreateMessageResult
 ) {
   sdk = spec;
   spec = sdk;
@@ -340,8 +358,8 @@ function checkListResourcesRequest(
   spec = sdk;
 }
 function checkListResourcesResult(
-  sdk: SDKTypes.ListResourcesResult,
-  spec: DeepKnownKeys<SpecTypes.ListResourcesResult>
+  sdk: RemovePassthrough<SDKTypes.ListResourcesResult>,
+  spec: SpecTypes.ListResourcesResult
 ) {
   sdk = spec;
   spec = sdk;
@@ -354,8 +372,8 @@ function checkListResourceTemplatesRequest(
   spec = sdk;
 }
 function checkListResourceTemplatesResult(
-  sdk: SDKTypes.ListResourceTemplatesResult,
-  spec: DeepKnownKeys<SpecTypes.ListResourceTemplatesResult>
+  sdk: RemovePassthrough<SDKTypes.ListResourceTemplatesResult>,
+  spec: SpecTypes.ListResourceTemplatesResult
 ) {
   sdk = spec;
   spec = sdk;
@@ -368,57 +386,57 @@ function checkReadResourceRequest(
   spec = sdk;
 }
 function checkReadResourceResult(
-  sdk: SDKTypes.ReadResourceResult,
-  spec: DeepKnownKeys<SpecTypes.ReadResourceResult>
+  sdk: RemovePassthrough<SDKTypes.ReadResourceResult>,
+  spec: SpecTypes.ReadResourceResult
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkResourceContents(
-  sdk: SDKTypes.ResourceContents,
-  spec: DeepKnownKeys<SpecTypes.ResourceContents>
+  sdk: RemovePassthrough<SDKTypes.ResourceContents>,
+  spec: SpecTypes.ResourceContents
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkTextResourceContents(
-  sdk: SDKTypes.TextResourceContents,
-  spec: DeepKnownKeys<SpecTypes.TextResourceContents>
+  sdk: RemovePassthrough<SDKTypes.TextResourceContents>,
+  spec: SpecTypes.TextResourceContents
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkBlobResourceContents(
-  sdk: SDKTypes.BlobResourceContents,
-  spec: DeepKnownKeys<SpecTypes.BlobResourceContents>
+  sdk: RemovePassthrough<SDKTypes.BlobResourceContents>,
+  spec: SpecTypes.BlobResourceContents
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkResource(
-  sdk: SDKTypes.Resource,
-  spec: DeepKnownKeys<SpecTypes.Resource>
+  sdk: RemovePassthrough<SDKTypes.Resource>,
+  spec: SpecTypes.Resource
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkResourceTemplate(
-  sdk: SDKTypes.ResourceTemplate,
-  spec: DeepKnownKeys<SpecTypes.ResourceTemplate>
+  sdk: RemovePassthrough<SDKTypes.ResourceTemplate>,
+  spec: SpecTypes.ResourceTemplate
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkPromptArgument(
-  sdk: SDKTypes.PromptArgument,
-  spec: DeepKnownKeys<SpecTypes.PromptArgument>
+  sdk: RemovePassthrough<SDKTypes.PromptArgument>,
+  spec: SpecTypes.PromptArgument
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkPrompt(
-  sdk: SDKTypes.Prompt,
-  spec: DeepKnownKeys<SpecTypes.Prompt>
+  sdk: RemovePassthrough<SDKTypes.Prompt>,
+  spec: SpecTypes.Prompt
 ) {
   sdk = spec;
   spec = sdk;
@@ -431,8 +449,8 @@ function checkListPromptsRequest(
   spec = sdk;
 }
 function checkListPromptsResult(
-  sdk: SDKTypes.ListPromptsResult,
-  spec: DeepKnownKeys<SpecTypes.ListPromptsResult>
+  sdk: RemovePassthrough<SDKTypes.ListPromptsResult>,
+  spec: SpecTypes.ListPromptsResult
 ) {
   sdk = spec;
   spec = sdk;
@@ -445,154 +463,154 @@ function checkGetPromptRequest(
   spec = sdk;
 }
 function checkTextContent(
-  sdk: SDKTypes.TextContent,
-  spec: DeepKnownKeys<SpecTypes.TextContent>
+  sdk: RemovePassthrough<SDKTypes.TextContent>,
+  spec: SpecTypes.TextContent
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkImageContent(
-  sdk: SDKTypes.ImageContent,
-  spec: DeepKnownKeys<SpecTypes.ImageContent>
+  sdk: RemovePassthrough<SDKTypes.ImageContent>,
+  spec: SpecTypes.ImageContent
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkAudioContent(
-  sdk: SDKTypes.AudioContent,
-  spec: DeepKnownKeys<SpecTypes.AudioContent>
+  sdk: RemovePassthrough<SDKTypes.AudioContent>,
+  spec: SpecTypes.AudioContent
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkEmbeddedResource(
-  sdk: SDKTypes.EmbeddedResource,
-  spec: DeepKnownKeys<SpecTypes.EmbeddedResource>
+  sdk: RemovePassthrough<SDKTypes.EmbeddedResource>,
+  spec: SpecTypes.EmbeddedResource
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkResourceLink(
-  sdk: SDKTypes.ResourceLink,
-  spec: DeepKnownKeys<SpecTypes.ResourceLink>
+  sdk: RemovePassthrough<SDKTypes.ResourceLink>,
+  spec: SpecTypes.ResourceLink
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkContentBlock(
-  sdk: SDKTypes.ContentBlock,
-  spec: DeepKnownKeys<SpecTypes.ContentBlock>
+  sdk: RemovePassthrough<SDKTypes.ContentBlock>,
+  spec: SpecTypes.ContentBlock
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkPromptMessage(
-  sdk: SDKTypes.PromptMessage,
-  spec: DeepKnownKeys<SpecTypes.PromptMessage>
+  sdk: RemovePassthrough<SDKTypes.PromptMessage>,
+  spec: SpecTypes.PromptMessage
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkGetPromptResult(
-  sdk: SDKTypes.GetPromptResult,
-  spec: DeepKnownKeys<SpecTypes.GetPromptResult>
+  sdk: RemovePassthrough<SDKTypes.GetPromptResult>,
+  spec: SpecTypes.GetPromptResult
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkBooleanSchema(
-  sdk: SDKTypes.BooleanSchema,
-  spec: DeepKnownKeys<SpecTypes.BooleanSchema>
+  sdk: RemovePassthrough<SDKTypes.BooleanSchema>,
+  spec: SpecTypes.BooleanSchema
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkStringSchema(
-  sdk: SDKTypes.StringSchema,
-  spec: DeepKnownKeys<SpecTypes.StringSchema>
+  sdk: RemovePassthrough<SDKTypes.StringSchema>,
+  spec: SpecTypes.StringSchema
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkNumberSchema(
-  sdk: SDKTypes.NumberSchema,
-  spec: DeepKnownKeys<SpecTypes.NumberSchema>
+  sdk: RemovePassthrough<SDKTypes.NumberSchema>,
+  spec: SpecTypes.NumberSchema
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkEnumSchema(
-  sdk: SDKTypes.EnumSchema,
-  spec: DeepKnownKeys<SpecTypes.EnumSchema>
+  sdk: RemovePassthrough<SDKTypes.EnumSchema>,
+  spec: SpecTypes.EnumSchema
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkPrimitiveSchemaDefinition(
-  sdk: SDKTypes.PrimitiveSchemaDefinition,
-  spec: DeepKnownKeys<SpecTypes.PrimitiveSchemaDefinition>
+  sdk: RemovePassthrough<SDKTypes.PrimitiveSchemaDefinition>,
+  spec: SpecTypes.PrimitiveSchemaDefinition
+) {
+  sdk = spec;
+  spec = sdk;
+}
+function checkJSONRPCError(
+  sdk: SDKTypes.JSONRPCError,
+  spec: SpecTypes.JSONRPCError
+) {
+  sdk = spec;
+  spec = sdk;
+}
+function checkJSONRPCMessage(
+  sdk: SDKTypes.JSONRPCMessage,
+  spec: SpecTypes.JSONRPCMessage
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkCreateMessageRequest(
-  sdk: DeepKnownKeys<SDKTypes.CreateMessageRequest>, // TODO(quirk): some {} type
-  spec: DeepKnownKeys<SpecTypes.CreateMessageRequest>
+  sdk: RemovePassthrough<SDKTypes.CreateMessageRequest>, // TODO(quirk): some {} typ>e
+  spec: SpecTypes.CreateMessageRequest
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkInitializeRequest(
-  sdk: DeepKnownKeys<SDKTypes.InitializeRequest>, // TODO(quirk): some {} type
+  sdk: RemovePassthrough<SDKTypes.InitializeRequest>, // TODO(quirk): some {} type
   spec: SpecTypes.InitializeRequest
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkInitializeResult(
-  sdk: DeepKnownKeys<SDKTypes.InitializeResult>, // TODO(quirk): some {} type
+  sdk: RemovePassthrough<SDKTypes.InitializeResult>, // TODO(quirk): some {} type
   spec: SpecTypes.InitializeResult
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkClientCapabilities(
-  sdk: DeepKnownKeys<SDKTypes.ClientCapabilities>, // TODO(quirk): {}
+  sdk: RemovePassthrough<SDKTypes.ClientCapabilities>, // TODO(quirk): {}
   spec: SpecTypes.ClientCapabilities
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkServerCapabilities(
-  sdk: DeepKnownKeys<SDKTypes.ServerCapabilities>, // TODO(quirk): {}
+  sdk: RemovePassthrough<SDKTypes.ServerCapabilities>, // TODO(quirk): {}
   spec: SpecTypes.ServerCapabilities
 ) {
   sdk = spec;
   spec = sdk;
 }
-function checkJSONRPCError(
-  sdk: DeepKnownKeys<SDKTypes.JSONRPCError>, // TODO(quirk): error.data
-  spec: DeepKnownKeys<SpecTypes.JSONRPCError>
-) {
-  sdk = spec;
-  spec = sdk;
-}
-function checkJSONRPCMessage(
-  sdk: DeepKnownKeys<SDKTypes.JSONRPCMessage>, // TODO(quirk): error.data
-  spec: DeepKnownKeys<SpecTypes.JSONRPCMessage>
-) {
-  sdk = spec;
-  spec = sdk;
-}
 function checkClientRequest(
-  sdk: DeepKnownKeys<SDKTypes.ClientRequest>, // TODO(quirk): capabilities.logging is {}
+  sdk: RemovePassthrough<SDKTypes.ClientRequest>, // TODO(quirk): capabilities.logging is {}
   spec: SpecTypes.ClientRequest
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkServerRequest(
-  sdk: DeepKnownKeys<SDKTypes.ServerRequest>, // TODO(quirk): some {} typ
+  sdk: RemovePassthrough<SDKTypes.ServerRequest>, // TODO(quirk): some {} typ
   spec: SpecTypes.ServerRequest
 ) {
   sdk = spec;
@@ -615,8 +633,8 @@ function checkServerNotification(
 
 // TODO(bug): missing type in SDK
 // function checkModelHint(
-//   sdk: SDKTypes.ModelHint,
-//   spec: DeepKnownKeys<SpecTypes.ModelHint>
+//  RemovePassthrough< sdk: SDKTypes.ModelHint>,
+//   spec: SpecTypes.ModelHint
 // ) {
 //   sdk = spec;
 //   spec = sdk;
@@ -624,8 +642,8 @@ function checkServerNotification(
 
 // TODO(bug): missing type in SDK
 // function checkModelPreferences(
-//   sdk: SDKTypes.ModelPreferences,
-//   spec: DeepKnownKeys<SpecTypes.ModelPreferences>
+//  RemovePassthrough< sdk: SDKTypes.ModelPreferences>,
+//   spec: SpecTypes.ModelPreferences
 // ) {
 //   sdk = spec;
 //   spec = sdk;
@@ -633,8 +651,8 @@ function checkServerNotification(
 
 // TODO(bug): missing type in SDK
 // function checkAnnotations(
-//   sdk: SDKTypes.Annotations,
-//   spec: DeepKnownKeys<SpecTypes.Annotations>
+//  RemovePassthrough< sdk: SDKTypes.Annotations>,
+//   spec: SpecTypes.Annotations
 // ) {
 //   sdk = spec;
 //   spec = sdk;
