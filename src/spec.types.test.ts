@@ -1,3 +1,10 @@
+/**
+ * This contains:
+ * - Static type checks to verify the Spec's types are compatible with the SDK's types
+ *   (mutually assignable, w/ slight affordances to get rid of ZodObject.passthrough() index signatures, etc)
+ * - Runtime checks to verify all Spec types have a static check
+ *   (a few don't have SDK types, see TODOs in this file)
+ */
 import * as SDKTypes from "./types.js";
 import * as SpecTypes from "./spec.types.js";
 
@@ -5,16 +12,40 @@ import * as SpecTypes from "./spec.types.js";
 /* eslint-disable @typescript-eslint/no-unsafe-function-type */
 /* eslint-disable @typescript-eslint/no-require-imports */
 
-// Deep version that recursively removes index signatures (caused by ZodObject.passthrough()) and turns unknowns into `object | undefined`
-// TODO: make string index mapping tighter
-// TODO: split into multiple transformations if needed
+// Removes index signatures added by ZodObject.passthrough().
 type RemovePassthrough<T> = T extends object
   ? T extends Array<infer U>
     ? Array<RemovePassthrough<U>>
     : T extends Function
         ? T
         : {[K in keyof T as string extends K ? never : K]: RemovePassthrough<T[K]>}
-  : T;
+    : T;
+
+type IsUnknown<T> = [unknown] extends [T] ? [T] extends [unknown] ? true : false : false;
+
+// Turns {x?: unknown} into {x: unknown} but keeps {_meta?: unknown} unchanged (and leaves other optional properties unchanged, e.g. {x?: string}).
+// This works around an apparent quirk of ZodObject.unknown() (makes fields optional)
+type MakeUnknownsNotOptional<T> =
+  IsUnknown<T> extends true
+    ? unknown
+    : (T extends object
+      ? (T extends Array<infer U>
+        ? Array<MakeUnknownsNotOptional<U>>
+        : (T extends Function
+          ? T
+          : Pick<T, never> & {
+            // Start with empty object to avoid duplicates
+            // Make unknown properties required (except _meta)
+            [K in keyof T as '_meta' extends K ? never : IsUnknown<T[K]> extends true ? K : never]-?: unknown;
+          } &
+          Pick<T, {
+            // Pick all _meta and non-unknown properties with original modifiers
+            [K in keyof T]: '_meta' extends K ? K : IsUnknown<T[K]> extends true ? never : K
+          }[keyof T]> & {
+            // Recurse on the picked properties
+            [K in keyof Pick<T, {[K in keyof T]: '_meta' extends K ? K : IsUnknown<T[K]> extends true ? never : K}[keyof T]>]: MakeUnknownsNotOptional<T[K]>
+          }))
+      : T);
 
 function checkCancelledNotification(
   sdk: SDKTypes.CancelledNotification,
@@ -36,7 +67,7 @@ function checkImplementation(
 ) {
   sdk = spec;
   spec = sdk;
-} 
+}
 function checkProgressNotification(
   sdk: SDKTypes.ProgressNotification,
   spec: SpecTypes.ProgressNotification
@@ -564,70 +595,70 @@ function checkJSONRPCMessage(
   spec = sdk;
 }
 function checkCreateMessageRequest(
-  sdk: RemovePassthrough<SDKTypes.CreateMessageRequest>, // TODO(quirk): some {} typ>e
+  sdk: RemovePassthrough<SDKTypes.CreateMessageRequest>,
   spec: SpecTypes.CreateMessageRequest
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkInitializeRequest(
-  sdk: RemovePassthrough<SDKTypes.InitializeRequest>, // TODO(quirk): some {} type
+  sdk: RemovePassthrough<SDKTypes.InitializeRequest>,
   spec: SpecTypes.InitializeRequest
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkInitializeResult(
-  sdk: RemovePassthrough<SDKTypes.InitializeResult>, // TODO(quirk): some {} type
+  sdk: RemovePassthrough<SDKTypes.InitializeResult>,
   spec: SpecTypes.InitializeResult
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkClientCapabilities(
-  sdk: RemovePassthrough<SDKTypes.ClientCapabilities>, // TODO(quirk): {}
+  sdk: RemovePassthrough<SDKTypes.ClientCapabilities>,
   spec: SpecTypes.ClientCapabilities
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkServerCapabilities(
-  sdk: RemovePassthrough<SDKTypes.ServerCapabilities>, // TODO(quirk): {}
+  sdk: RemovePassthrough<SDKTypes.ServerCapabilities>,
   spec: SpecTypes.ServerCapabilities
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkClientRequest(
-  sdk: RemovePassthrough<SDKTypes.ClientRequest>, // TODO(quirk): capabilities.logging is {}
+  sdk: RemovePassthrough<SDKTypes.ClientRequest>,
   spec: SpecTypes.ClientRequest
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkServerRequest(
-  sdk: RemovePassthrough<SDKTypes.ServerRequest>, // TODO(quirk): some {} typ
+  sdk: RemovePassthrough<SDKTypes.ServerRequest>,
   spec: SpecTypes.ServerRequest
 ) {
   sdk = spec;
   spec = sdk;
 }
 function checkLoggingMessageNotification(
-  sdk: SDKTypes.LoggingMessageNotification,
+  sdk: MakeUnknownsNotOptional<SDKTypes.LoggingMessageNotification>,
   spec: SpecTypes.LoggingMessageNotification
 ) {
   sdk = spec;
-  // spec = sdk; // TODO(bug): data is optional
+  spec = sdk;
 }
 function checkServerNotification(
-  sdk: SDKTypes.ServerNotification,
+  sdk: MakeUnknownsNotOptional<SDKTypes.ServerNotification>,
   spec: SpecTypes.ServerNotification
 ) {
   sdk = spec;
-  // spec = sdk; // TODO(bug): data is optional
+  spec = sdk;
 }
 
-// TODO(bug): missing type in SDK
+// TODO(bug): missing type in SDK. This dead code is checked by the test suite below.
 // function checkModelHint(
 //  RemovePassthrough< sdk: SDKTypes.ModelHint>,
 //   spec: SpecTypes.ModelHint
@@ -636,7 +667,7 @@ function checkServerNotification(
 //   spec = sdk;
 // }
 
-// TODO(bug): missing type in SDK
+// TODO(bug): missing type in SDK. This dead code is checked by the test suite below.
 // function checkModelPreferences(
 //  RemovePassthrough< sdk: SDKTypes.ModelPreferences>,
 //   spec: SpecTypes.ModelPreferences
@@ -645,7 +676,7 @@ function checkServerNotification(
 //   spec = sdk;
 // }
 
-// TODO(bug): missing type in SDK
+// TODO(bug): missing type in SDK. This dead code is checked by the test suite below.
 // function checkAnnotations(
 //  RemovePassthrough< sdk: SDKTypes.Annotations>,
 //   spec: SpecTypes.Annotations
@@ -661,7 +692,7 @@ describe('Spec Types', () => {
     const specTypesContent = require('fs').readFileSync(SPEC_TYPES_FILE, 'utf-8');
     const typeNames = [...specTypesContent.matchAll(/export\s+interface\s+(\w+)\b/g)].map(m => m[1]);
     const testContent = require('fs').readFileSync(THIS_SOURCE_FILE, 'utf-8');
-    
+
     it('should define some expected types', () => {
         expect(typeNames).toContain('JSONRPCNotification');
         expect(typeNames).toContain('ElicitResult');
