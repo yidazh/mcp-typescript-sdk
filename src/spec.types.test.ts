@@ -7,6 +7,7 @@
  */
 import * as SDKTypes from "./types.js";
 import * as SpecTypes from "./spec.types.js";
+import fs from "node:fs";
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unsafe-function-type */
@@ -690,18 +691,18 @@ const SPEC_TYPES_FILE  = 'src/spec.types.ts';
 const THIS_SOURCE_FILE = 'src/spec.types.test.ts';
 
 describe('Spec Types', () => {
-    const specTypesContent = require('fs').readFileSync(SPEC_TYPES_FILE, 'utf-8');
-    const typeNames = [...specTypesContent.matchAll(/export\s+interface\s+(\w+)\b/g)].map(m => m[1]);
-    const testContent = require('fs').readFileSync(THIS_SOURCE_FILE, 'utf-8');
+  const specTypesContent = fs.readFileSync(SPEC_TYPES_FILE, 'utf-8');
+  const typeNames = [...specTypesContent.matchAll(/export\s+interface\s+(\w+)\b/g)].map(m => m[1]);
+  const testContent = fs.readFileSync(THIS_SOURCE_FILE, 'utf-8');
 
-    it('should define some expected types', () => {
-        expect(typeNames).toContain('JSONRPCNotification');
-        expect(typeNames).toContain('ElicitResult');
+  it('should define some expected types', () => {
+    expect(typeNames).toContain('JSONRPCNotification');
+    expect(typeNames).toContain('ElicitResult');
+  });
+
+  for (const typeName of typeNames) {
+    it(`${typeName} should have a compatibility test`, () => {
+      expect(testContent).toContain(`function check${typeName}(`);
     });
-
-    for (const typeName of typeNames) {
-        it(`${typeName} should have a compatibility test`, () => {
-            expect(testContent).toContain(`function check${typeName}(`);
-        });
-    }
+  }
 });
