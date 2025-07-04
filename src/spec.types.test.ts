@@ -658,51 +658,55 @@ function checkServerNotification(
   sdk = spec;
   spec = sdk;
 }
-
-// TODO(bug): missing type in SDK. This dead code is checked by the test suite below.
-// function checkModelHint(
-//  RemovePassthrough< sdk: SDKTypes.ModelHint>,
-//   spec: SpecTypes.ModelHint
-// ) {
-//   sdk = spec;
-//   spec = sdk;
-// }
-
-// TODO(bug): missing type in SDK. This dead code is checked by the test suite below.
-// function checkModelPreferences(
-//  RemovePassthrough< sdk: SDKTypes.ModelPreferences>,
-//   spec: SpecTypes.ModelPreferences
-// ) {
-//   sdk = spec;
-//   spec = sdk;
-// }
-
-// TODO(bug): missing type in SDK. This dead code is checked by the test suite below.
-// function checkAnnotations(
-//  RemovePassthrough< sdk: SDKTypes.Annotations>,
-//   spec: SpecTypes.Annotations
-// ) {
-//   sdk = spec;
-//   spec = sdk;
-// }
+function checkLoggingLevel(
+  sdk: SDKTypes.LoggingLevel,
+  spec: SpecTypes.LoggingLevel
+) {
+  sdk = spec;
+  spec = sdk;
+}
 
 // This file is .gitignore'd, and fetched by `npm run fetch:spec-types` (called by `npm run test`)
 const SPEC_TYPES_FILE  = 'src/spec.types.ts';
-const THIS_SOURCE_FILE = 'src/spec.types.test.ts';
+const SDK_TYPES_FILE  = 'src/types.ts';
+
+const MISSING_SDK_TYPES = [
+  // These are inlined in the SDK:
+  'Role',
+
+  // These aren't supported by the SDK yet:
+  // TODO: Add definitions to the SDK
+  'ModelHint',
+  'ModelPreferences',
+  'Annotations',
+]
+
+function extractExportedTypes(source: string): string[] {
+  return [...source.matchAll(/export\s+(?:interface|class|type)\s+(\w+)\b/g)].map(m => m[1]);
+}
 
 describe('Spec Types', () => {
-  const specTypesContent = fs.readFileSync(SPEC_TYPES_FILE, 'utf-8');
-  const typeNames = [...specTypesContent.matchAll(/export\s+interface\s+(\w+)\b/g)].map(m => m[1]);
-  const testContent = fs.readFileSync(THIS_SOURCE_FILE, 'utf-8');
+  const specTypes = extractExportedTypes(fs.readFileSync(SPEC_TYPES_FILE, 'utf-8'));
+  const sdkTypes = extractExportedTypes(fs.readFileSync(SDK_TYPES_FILE, 'utf-8'));
+  const testSource = fs.readFileSync(__filename, 'utf-8');
 
   it('should define some expected types', () => {
-    expect(typeNames).toContain('JSONRPCNotification');
-    expect(typeNames).toContain('ElicitResult');
+    expect(specTypes).toContain('JSONRPCNotification');
+    expect(specTypes).toContain('ElicitResult');
   });
 
-  for (const typeName of typeNames) {
-    it(`${typeName} should have a compatibility test`, () => {
-      expect(testContent).toContain(`function check${typeName}(`);
+  it('should have up to date list of missing sdk types', () => {
+    for (const typeName of MISSING_SDK_TYPES) {
+      expect(sdkTypes).not.toContain(typeName);
+    }
+  });
+
+  for (const type of specTypes) {
+    if (MISSING_SDK_TYPES.includes(type)) {
+      continue; // Skip missing SDK types
+    }
+    it(`${type} should have a compatibility test`, () => {
+      expect(testSource).toContain(`function check${type}(`);
     });
   }
 });
