@@ -3,7 +3,7 @@
  * - Static type checks to verify the Spec's types are compatible with the SDK's types
  *   (mutually assignable, w/ slight affordances to get rid of ZodObject.passthrough() index signatures, etc)
  * - Runtime checks to verify each Spec type has a static check
- *   (note: a few don't have SDK types, see TODOs in this file)
+ *   (note: a few don't have SDK types, see MISSING_SDK_TYPES below)
  */
 import * as SDKTypes from "./types.js";
 import * as SpecTypes from "./spec.types.js";
