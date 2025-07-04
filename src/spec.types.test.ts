@@ -11,7 +11,6 @@ import fs from "node:fs";
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unsafe-function-type */
-/* eslint-disable @typescript-eslint/no-require-imports */
 
 // Removes index signatures added by ZodObject.passthrough().
 type RemovePassthrough<T> = T extends object
