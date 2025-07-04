@@ -676,9 +676,9 @@ const MISSING_SDK_TYPES = [
 
   // These aren't supported by the SDK yet:
   // TODO: Add definitions to the SDK
+  'Annotations',
   'ModelHint',
   'ModelPreferences',
-  'Annotations',
 ]
 
 function extractExportedTypes(source: string): string[] {
@@ -693,6 +693,7 @@ describe('Spec Types', () => {
   it('should define some expected types', () => {
     expect(specTypes).toContain('JSONRPCNotification');
     expect(specTypes).toContain('ElicitResult');
+    expect(specTypes).toHaveLength(91);
   });
 
   it('should have up to date list of missing sdk types', () => {
