@@ -320,8 +320,8 @@ async function fetchWithCorsRetry(
 /**
  * Constructs the well-known path for OAuth metadata discovery
  */
-function buildWellKnownPath(wellKnownPath: string, pathname: string): string {
-  let wellKnownPath = `/.well-known/${wellKnownPath}${pathname}`;
+function buildWellKnownPath(wellKnownPrefix: string, pathname: string): string {
+  let wellKnownPath = `/.well-known/${wellKnownPrefix}${pathname}`;
   if (pathname.endsWith('/')) {
     // Strip trailing slash from pathname to avoid double slashes
     wellKnownPath = wellKnownPath.slice(0, -1);
