@@ -263,6 +263,7 @@ export async function discoverOAuthProtectedResourceMetadata(
   } else {
     const issuer = new URL(serverUrl);
     const wellKnownPath = buildWellKnownPath('oauth-protected-resource', issuer.pathname);
+    wellKnownPath.search = issuer.search;
     url = new URL(wellKnownPath, issuer);
   }
 
@@ -365,6 +366,7 @@ export async function discoverOAuthMetadata(
   // Try path-aware discovery first (RFC 8414 compliant)
   const wellKnownPath = buildWellKnownPath('oauth-authorization-server', issuer.pathname);
   const pathAwareUrl = new URL(wellKnownPath, issuer);
+  pathAwareUrl.search = issuer.search;
   let response = await tryMetadataDiscovery(pathAwareUrl, protocolVersion);
 
   // If path-aware discovery fails with 404, try fallback to root discovery
