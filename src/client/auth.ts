@@ -263,8 +263,8 @@ export async function discoverOAuthProtectedResourceMetadata(
   } else {
     const issuer = new URL(serverUrl);
     const wellKnownPath = buildWellKnownPath('oauth-protected-resource', issuer.pathname);
-    wellKnownPath.search = issuer.search;
     url = new URL(wellKnownPath, issuer);
+    url.search = issuer.search;
   }
 
   let response: Response;
