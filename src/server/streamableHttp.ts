@@ -133,6 +133,7 @@ export class StreamableHTTPServerTransport implements Transport {
 
   sessionId?: string;
   onclose?: () => void;
+  ondelete?: (sessionId: string) => void;
   onerror?: (error: Error) => void;
   onmessage?: (message: JSONRPCMessage, extra?: MessageExtraInfo) => void;
 
@@ -538,6 +539,7 @@ export class StreamableHTTPServerTransport implements Transport {
     if (!this.validateProtocolVersion(req, res)) {
       return;
     }
+    this.ondelete?.(this.sessionId!);
     await this.close();
     res.writeHead(200).end();
   }
