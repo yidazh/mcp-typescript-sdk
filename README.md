@@ -570,18 +570,7 @@ app.listen(3000);
 ```
 
 > [!TIP]
-> When using this in a remote environment, make sure to allow the header parameter `mcp-session-id` in CORS. Otherwise, it may result in a `Bad Request: No valid session ID provided` error. 
-> 
-> For example, in Node.js you can configure it like this:
-> 
-> ```ts
-> app.use(
->   cors({
->     origin: ['https://your-remote-domain.com, https://your-other-remote-domain.com'],
->     exposedHeaders: ['mcp-session-id'],
->     allowedHeaders: ['Content-Type', 'mcp-session-id'],
->   })
-> );
+> When using this in a remote environment, make sure to allow the header parameter `mcp-session-id` in CORS. Otherwise, it may result in a `Bad Request: No valid session ID provided` error. Read the following section for examples.
 > ```
 
 
@@ -594,8 +583,10 @@ import cors from 'cors';
 
 // Add CORS middleware before your MCP routes
 app.use(cors({
-  origin: '*', // Configure appropriately for production
+  origin: '*', // Configure appropriately for production, for example:
+  // origin: ['https://your-remote-domain.com, https://your-other-remote-domain.com'],
   exposedHeaders: ['Mcp-Session-Id']
+  allowedHeaders: ['Content-Type', 'mcp-session-id'],
 }));
 ```
 
