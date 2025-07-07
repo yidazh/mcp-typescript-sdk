@@ -258,13 +258,6 @@ function checkPromptReference(
   sdk = spec;
   spec = sdk;
 }
-function checkResourceReference(
-  sdk: RemovePassthrough<SDKTypes.ResourceReference>,
-  spec: SpecTypes.ResourceTemplateReference
-) {
-  sdk = spec;
-  spec = sdk;
-}
 function checkToolAnnotations(
   sdk: RemovePassthrough<SDKTypes.ToolAnnotations>,
   spec: SpecTypes.ToolAnnotations
