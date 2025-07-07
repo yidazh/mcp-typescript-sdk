@@ -70,7 +70,7 @@ web_modules/
 *.tgz
 
 # Output of 'npm run fetch:spec-types'
-src/spec.types.ts
+spec.types.ts
 
 # Yarn Integrity file
 .yarn-integrity
