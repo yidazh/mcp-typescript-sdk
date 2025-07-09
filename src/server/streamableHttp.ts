@@ -47,7 +47,7 @@ export interface StreamableHTTPServerTransportOptions {
    * and need to keep track of them.
    * @param sessionId The generated session ID
    */
-  onsessioninitialized?: (sessionId: string) => void;
+  onsessioninitialized?: (sessionId: string) => void | Promise<void>;
 
   /**
    * A callback for session close events
@@ -59,7 +59,7 @@ export interface StreamableHTTPServerTransportOptions {
    * session open/running.
    * @param sessionId The session ID that was closed
   */
-  onsessionclosed?: (sessionId: string) => void;
+  onsessionclosed?: (sessionId: string) => void | Promise<void>;
 
   /**
    * If true, the server will return JSON responses instead of starting an SSE stream.
@@ -138,8 +138,8 @@ export class StreamableHTTPServerTransport implements Transport {
   private _enableJsonResponse: boolean = false;
   private _standaloneSseStreamId: string = '_GET_stream';
   private _eventStore?: EventStore;
-  private _onsessioninitialized?: (sessionId: string) => void;
-  private _onsessionclosed?: (sessionId: string) => void;
+  private _onsessioninitialized?: (sessionId: string) => void | Promise<void>;
+  private _onsessionclosed?: (sessionId: string) => void | Promise<void>;
   private _allowedHosts?: string[];
   private _allowedOrigins?: string[];
   private _enableDnsRebindingProtection: boolean;
@@ -460,7 +460,7 @@ export class StreamableHTTPServerTransport implements Transport {
         // If we have a session ID and an onsessioninitialized handler, call it immediately
         // This is needed in cases where the server needs to keep track of multiple sessions
         if (this.sessionId && this._onsessioninitialized) {
-          this._onsessioninitialized(this.sessionId);
+          await Promise.resolve(this._onsessioninitialized(this.sessionId));
         }
 
       }
@@ -552,7 +552,7 @@ export class StreamableHTTPServerTransport implements Transport {
     if (!this.validateProtocolVersion(req, res)) {
       return;
     }
-    this._onsessionclosed?.(this.sessionId!);
+    await Promise.resolve(this._onsessionclosed?.(this.sessionId!));
     await this.close();
     res.writeHead(200).end();
   }
