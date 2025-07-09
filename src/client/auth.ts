@@ -122,7 +122,9 @@ export async function auth(
 
   const resource: URL | undefined = await selectResourceURL(serverUrl, provider, resourceMetadata);
 
-  const metadata = await discoverOAuthMetadata(authorizationServerUrl);
+  const metadata = await discoverOAuthMetadata(serverUrl, {
+    authorizationServerUrl
+  });
 
   // Handle client registration if needed
   let clientInformation = await Promise.resolve(provider.clientInformation());
@@ -354,15 +356,27 @@ function shouldAttemptFallback(response: Response | undefined, pathname: string)
  * return `undefined`. Any other errors will be thrown as exceptions.
  */
 export async function discoverOAuthMetadata(
-  authorizationServerUrl: string | URL,
-  opts?: { protocolVersion?: string },
+  issuer: string | URL,
+  {
+    authorizationServerUrl
+  }: {
+    authorizationServerUrl?: string | URL
+  } = {},
 ): Promise<OAuthMetadata | undefined> {
-  const issuer = new URL(authorizationServerUrl);
-  const protocolVersion = opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION;
+  if (typeof issuer === 'string') {
+    issuer = new URL(issuer);
+  }
+  if (!authorizationServerUrl) {
+    authorizationServerUrl = issuer;
+  }
+  if (typeof authorizationServerUrl === 'string') {
+    authorizationServerUrl = new URL(authorizationServerUrl);
+  }
+  protocolVersion ??= LATEST_PROTOCOL_VERSION;
 
   // Try path-aware discovery first (RFC 8414 compliant)
   const wellKnownPath = buildWellKnownPath(issuer.pathname);
-  const pathAwareUrl = new URL(wellKnownPath, issuer);
+  const pathAwareUrl = new URL(wellKnownPath, authorizationServerUrl);
   let response = await tryMetadataDiscovery(pathAwareUrl, protocolVersion);
 
   // If path-aware discovery fails with 404, try fallback to root discovery
