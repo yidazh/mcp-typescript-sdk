@@ -358,9 +358,9 @@ function shouldAttemptFallback(response: Response | undefined, pathname: string)
 export async function discoverOAuthMetadata(
   issuer: string | URL,
   {
-    authorizationServerUrl
+    authorizationServerUrl,
   }: {
-    authorizationServerUrl?: string | URL
+    authorizationServerUrl?: string | URL,
   } = {},
 ): Promise<OAuthMetadata | undefined> {
   if (typeof issuer === 'string') {
