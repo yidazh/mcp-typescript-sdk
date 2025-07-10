@@ -177,6 +177,36 @@ describe("OAuth Authorization", () => {
       await expect(discoverOAuthProtectedResourceMetadata("https://resource.example.com"))
         .rejects.toThrow();
     });
+
+    it("returns metadata when discovery succeeds with path", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validMetadata,
+      });
+
+      const metadata = await discoverOAuthProtectedResourceMetadata("https://resource.example.com/path/name");
+      expect(metadata).toEqual(validMetadata);
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1);
+      const [url] = calls[0];
+      expect(url.toString()).toBe("https://resource.example.com/.well-known/oauth-protected-resource/path/name");
+    });
+
+    it("preserves query parameters in path-aware discovery", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validMetadata,
+      });
+
+      const metadata = await discoverOAuthProtectedResourceMetadata("https://resource.example.com/path?param=value");
+      expect(metadata).toEqual(validMetadata);
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1);
+      const [url] = calls[0];
+      expect(url.toString()).toBe("https://resource.example.com/.well-known/oauth-protected-resource/path?param=value");
+    });
   });
 
   describe("discoverOAuthMetadata", () => {
