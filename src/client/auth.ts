@@ -489,8 +489,10 @@ export async function discoverOAuthMetadata(
   issuer: string | URL,
   {
     authorizationServerUrl,
+    protocolVersion,
   }: {
     authorizationServerUrl?: string | URL,
+    protocolVersion?: string,
   } = {},
 ): Promise<OAuthMetadata | undefined> {
   if (typeof issuer === 'string') {
