@@ -1753,7 +1753,7 @@ describe("OAuth Authorization", () => {
       mockFetch.mockImplementation((url) => {
         const urlString = url.toString();
 
-        if (urlString === "https://my.resource.com/.well-known/oauth-protected-resource") {
+        if (urlString === "https://my.resource.com/.well-known/oauth-protected-resource/path/name") {
           return Promise.resolve({
             ok: true,
             status: 200,
@@ -1800,7 +1800,7 @@ describe("OAuth Authorization", () => {
       const calls = mockFetch.mock.calls;
       
       // First call should be to PRM
-      expect(calls[0][0].toString()).toBe("https://my.resource.com/.well-known/oauth-protected-resource");
+      expect(calls[0][0].toString()).toBe("https://my.resource.com/.well-known/oauth-protected-resource/path/name");
       
       // Second call should be to AS metadata with the path from serverUrl
       expect(calls[1][0].toString()).toBe("https://auth.example.com/.well-known/oauth-authorization-server/path/name");

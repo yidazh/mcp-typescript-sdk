@@ -471,7 +471,7 @@ function shouldAttemptFallback(response: Response | undefined, pathname: string)
 async function discoverMetadataWithFallback(
   serverUrl: string | URL,
   wellKnownType: 'oauth-authorization-server' | 'oauth-protected-resource',
-  opts?: { protocolVersion?: string; metadataUrl?: string | URL },
+  opts?: { protocolVersion?: string; metadataUrl?: string | URL, metadataServerUrl?: string | URL },
 ): Promise<Response | undefined> {
   const issuer = new URL(serverUrl);
   const protocolVersion = opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION;
@@ -482,7 +482,7 @@ async function discoverMetadataWithFallback(
   } else {
     // Try path-aware discovery first
     const wellKnownPath = buildWellKnownPath(wellKnownType, issuer.pathname);
-    url = new URL(wellKnownPath, issuer);
+    url = new URL(wellKnownPath, opts?.metadataServerUrl ?? issuer);
     url.search = issuer.search;
   }
 
@@ -525,9 +525,13 @@ export async function discoverOAuthMetadata(
   protocolVersion ??= LATEST_PROTOCOL_VERSION;
 
   const response = await discoverMetadataWithFallback(
-    authorizationServerUrl,
+    issuer,
+    // authorizationServerUrl,
     'oauth-authorization-server',
-    {protocolVersion},
+    {
+      protocolVersion,
+      metadataServerUrl: authorizationServerUrl,
+    },
   );
 
   if (!response || response.status === 404) {
