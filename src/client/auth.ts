@@ -251,7 +251,9 @@ export async function auth(
 
   const resource: URL | undefined = await selectResourceURL(serverUrl, provider, resourceMetadata);
 
-  const metadata = await discoverOAuthMetadata(authorizationServerUrl);
+  const metadata = await discoverOAuthMetadata(serverUrl, {
+    authorizationServerUrl
+  });
 
   // Handle client registration if needed
   let clientInformation = await Promise.resolve(provider.clientInformation());
@@ -469,7 +471,7 @@ function shouldAttemptFallback(response: Response | undefined, pathname: string)
 async function discoverMetadataWithFallback(
   serverUrl: string | URL,
   wellKnownType: 'oauth-authorization-server' | 'oauth-protected-resource',
-  opts?: { protocolVersion?: string; metadataUrl?: string | URL },
+  opts?: { protocolVersion?: string; metadataUrl?: string | URL, metadataServerUrl?: string | URL },
 ): Promise<Response | undefined> {
   const issuer = new URL(serverUrl);
   const protocolVersion = opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION;
@@ -480,7 +482,7 @@ async function discoverMetadataWithFallback(
   } else {
     // Try path-aware discovery first
     const wellKnownPath = buildWellKnownPath(wellKnownType, issuer.pathname);
-    url = new URL(wellKnownPath, issuer);
+    url = new URL(wellKnownPath, opts?.metadataServerUrl ?? issuer);
     url.search = issuer.search;
   }
 
@@ -502,13 +504,33 @@ async function discoverMetadataWithFallback(
  * return `undefined`. Any other errors will be thrown as exceptions.
  */
 export async function discoverOAuthMetadata(
-  authorizationServerUrl: string | URL,
-  opts?: { protocolVersion?: string },
-): Promise<OAuthMetadata | undefined> {
-  const response = await discoverMetadataWithFallback(
+  issuer: string | URL,
+  {
     authorizationServerUrl,
+    protocolVersion,
+  }: {
+    authorizationServerUrl?: string | URL,
+    protocolVersion?: string,
+  } = {},
+): Promise<OAuthMetadata | undefined> {
+  if (typeof issuer === 'string') {
+    issuer = new URL(issuer);
+  }
+  if (!authorizationServerUrl) {
+    authorizationServerUrl = issuer;
+  }
+  if (typeof authorizationServerUrl === 'string') {
+    authorizationServerUrl = new URL(authorizationServerUrl);
+  }
+  protocolVersion ??= LATEST_PROTOCOL_VERSION;
+
+  const response = await discoverMetadataWithFallback(
+    issuer,
     'oauth-authorization-server',
-    opts,
+    {
+      protocolVersion,
+      metadataServerUrl: authorizationServerUrl,
+    },
   );
 
   if (!response || response.status === 404) {
