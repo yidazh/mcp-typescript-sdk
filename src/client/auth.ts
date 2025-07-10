@@ -235,12 +235,13 @@ export async function auth(
     serverUrl: string | URL;
     authorizationCode?: string;
     scope?: string;
-    resourceMetadataUrl?: URL }): Promise<AuthResult> {
+    resourceMetadataUrl?: URL
+  }): Promise<AuthResult> {
 
   let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
   let authorizationServerUrl = serverUrl;
   try {
-    resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {resourceMetadataUrl});
+    resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, { resourceMetadataUrl });
     if (resourceMetadata.authorization_servers && resourceMetadata.authorization_servers.length > 0) {
       authorizationServerUrl = resourceMetadata.authorization_servers[0];
     }
@@ -327,7 +328,7 @@ export async function auth(
   return "REDIRECT";
 }
 
-export async function selectResourceURL(serverUrl: string| URL, provider: OAuthClientProvider, resourceMetadata?: OAuthProtectedResourceMetadata): Promise<URL | undefined> {
+export async function selectResourceURL(serverUrl: string | URL, provider: OAuthClientProvider, resourceMetadata?: OAuthProtectedResourceMetadata): Promise<URL | undefined> {
   const defaultResource = resourceUrlFromServerUrl(serverUrl);
 
   // If provider has custom validation, delegate to it
@@ -386,31 +387,16 @@ export async function discoverOAuthProtectedResourceMetadata(
   serverUrl: string | URL,
   opts?: { protocolVersion?: string, resourceMetadataUrl?: string | URL },
 ): Promise<OAuthProtectedResourceMetadata> {
+  const response = await discoverMetadataWithFallback(
+    serverUrl,
+    'oauth-protected-resource',
+    {
+      protocolVersion: opts?.protocolVersion,
+      metadataUrl: opts?.resourceMetadataUrl,
+    },
+  );
 
-  let url: URL
-  if (opts?.resourceMetadataUrl) {
-    url = new URL(opts?.resourceMetadataUrl);
-  } else {
-    url = new URL("/.well-known/oauth-protected-resource", serverUrl);
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      headers: {
-        "MCP-Protocol-Version": opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION
-      }
-    });
-  } catch (error) {
-    // CORS errors come back as TypeError
-    if (error instanceof TypeError) {
-      response = await fetch(url);
-    } else {
-      throw error;
-    }
-  }
-
-  if (response.status === 404) {
+  if (!response || response.status === 404) {
     throw new Error(`Resource server does not implement OAuth 2.0 Protected Resource Metadata.`);
   }
 
@@ -448,8 +434,8 @@ async function fetchWithCorsRetry(
 /**
  * Constructs the well-known path for OAuth metadata discovery
  */
-function buildWellKnownPath(pathname: string): string {
-  let wellKnownPath = `/.well-known/oauth-authorization-server${pathname}`;
+function buildWellKnownPath(wellKnownPrefix: string, pathname: string): string {
+  let wellKnownPath = `/.well-known/${wellKnownPrefix}${pathname}`;
   if (pathname.endsWith('/')) {
     // Strip trailing slash from pathname to avoid double slashes
     wellKnownPath = wellKnownPath.slice(0, -1);
@@ -478,6 +464,38 @@ function shouldAttemptFallback(response: Response | undefined, pathname: string)
 }
 
 /**
+ * Generic function for discovering OAuth metadata with fallback support
+ */
+async function discoverMetadataWithFallback(
+  serverUrl: string | URL,
+  wellKnownType: 'oauth-authorization-server' | 'oauth-protected-resource',
+  opts?: { protocolVersion?: string; metadataUrl?: string | URL },
+): Promise<Response | undefined> {
+  const issuer = new URL(serverUrl);
+  const protocolVersion = opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION;
+
+  let url: URL;
+  if (opts?.metadataUrl) {
+    url = new URL(opts.metadataUrl);
+  } else {
+    // Try path-aware discovery first
+    const wellKnownPath = buildWellKnownPath(wellKnownType, issuer.pathname);
+    url = new URL(wellKnownPath, issuer);
+    url.search = issuer.search;
+  }
+
+  let response = await tryMetadataDiscovery(url, protocolVersion);
+
+  // If path-aware discovery fails with 404 and we're not already at root, try fallback to root discovery
+  if (!opts?.metadataUrl && shouldAttemptFallback(response, issuer.pathname)) {
+    const rootUrl = new URL(`/.well-known/${wellKnownType}`, issuer);
+    response = await tryMetadataDiscovery(rootUrl, protocolVersion);
+  }
+
+  return response;
+}
+
+/**
  * Looks up RFC 8414 OAuth 2.0 Authorization Server Metadata.
  *
  * If the server returns a 404 for the well-known endpoint, this function will
@@ -487,19 +505,12 @@ export async function discoverOAuthMetadata(
   authorizationServerUrl: string | URL,
   opts?: { protocolVersion?: string },
 ): Promise<OAuthMetadata | undefined> {
-  const issuer = new URL(authorizationServerUrl);
-  const protocolVersion = opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION;
+  const response = await discoverMetadataWithFallback(
+    authorizationServerUrl,
+    'oauth-authorization-server',
+    opts,
+  );
 
-  // Try path-aware discovery first (RFC 8414 compliant)
-  const wellKnownPath = buildWellKnownPath(issuer.pathname);
-  const pathAwareUrl = new URL(wellKnownPath, issuer);
-  let response = await tryMetadataDiscovery(pathAwareUrl, protocolVersion);
-
-  // If path-aware discovery fails with 404, try fallback to root discovery
-  if (shouldAttemptFallback(response, issuer.pathname)) {
-    const rootUrl = new URL("/.well-known/oauth-authorization-server", issuer);
-    response = await tryMetadataDiscovery(rootUrl, protocolVersion);
-  }
   if (!response || response.status === 404) {
     return undefined;
   }

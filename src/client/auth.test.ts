@@ -178,6 +178,174 @@ describe("OAuth Authorization", () => {
       await expect(discoverOAuthProtectedResourceMetadata("https://resource.example.com"))
         .rejects.toThrow();
     });
+
+    it("returns metadata when discovery succeeds with path", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validMetadata,
+      });
+
+      const metadata = await discoverOAuthProtectedResourceMetadata("https://resource.example.com/path/name");
+      expect(metadata).toEqual(validMetadata);
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1);
+      const [url] = calls[0];
+      expect(url.toString()).toBe("https://resource.example.com/.well-known/oauth-protected-resource/path/name");
+    });
+
+    it("preserves query parameters in path-aware discovery", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validMetadata,
+      });
+
+      const metadata = await discoverOAuthProtectedResourceMetadata("https://resource.example.com/path?param=value");
+      expect(metadata).toEqual(validMetadata);
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1);
+      const [url] = calls[0];
+      expect(url.toString()).toBe("https://resource.example.com/.well-known/oauth-protected-resource/path?param=value");
+    });
+
+    it("falls back to root discovery when path-aware discovery returns 404", async () => {
+      // First call (path-aware) returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+      
+      // Second call (root fallback) succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validMetadata,
+      });
+
+      const metadata = await discoverOAuthProtectedResourceMetadata("https://resource.example.com/path/name");
+      expect(metadata).toEqual(validMetadata);
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(2);
+      
+      // First call should be path-aware
+      const [firstUrl, firstOptions] = calls[0];
+      expect(firstUrl.toString()).toBe("https://resource.example.com/.well-known/oauth-protected-resource/path/name");
+      expect(firstOptions.headers).toEqual({
+        "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION
+      });
+      
+      // Second call should be root fallback
+      const [secondUrl, secondOptions] = calls[1];
+      expect(secondUrl.toString()).toBe("https://resource.example.com/.well-known/oauth-protected-resource");
+      expect(secondOptions.headers).toEqual({
+        "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION
+      });
+    });
+
+    it("throws error when both path-aware and root discovery return 404", async () => {
+      // First call (path-aware) returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+      
+      // Second call (root fallback) also returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      await expect(discoverOAuthProtectedResourceMetadata("https://resource.example.com/path/name"))
+        .rejects.toThrow("Resource server does not implement OAuth 2.0 Protected Resource Metadata.");
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(2);
+    });
+
+    it("does not fallback when the original URL is already at root path", async () => {
+      // First call (path-aware for root) returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      await expect(discoverOAuthProtectedResourceMetadata("https://resource.example.com/"))
+        .rejects.toThrow("Resource server does not implement OAuth 2.0 Protected Resource Metadata.");
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1); // Should not attempt fallback
+      
+      const [url] = calls[0];
+      expect(url.toString()).toBe("https://resource.example.com/.well-known/oauth-protected-resource");
+    });
+
+    it("does not fallback when the original URL has no path", async () => {
+      // First call (path-aware for no path) returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      await expect(discoverOAuthProtectedResourceMetadata("https://resource.example.com"))
+        .rejects.toThrow("Resource server does not implement OAuth 2.0 Protected Resource Metadata.");
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1); // Should not attempt fallback
+      
+      const [url] = calls[0];
+      expect(url.toString()).toBe("https://resource.example.com/.well-known/oauth-protected-resource");
+    });
+
+    it("falls back when path-aware discovery encounters CORS error", async () => {
+      // First call (path-aware) fails with TypeError (CORS)
+      mockFetch.mockImplementationOnce(() => Promise.reject(new TypeError("CORS error")));
+      
+      // Retry path-aware without headers (simulating CORS retry)
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+      
+      // Second call (root fallback) succeeds
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validMetadata,
+      });
+
+      const metadata = await discoverOAuthProtectedResourceMetadata("https://resource.example.com/deep/path");
+      expect(metadata).toEqual(validMetadata);
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(3);
+      
+      // Final call should be root fallback
+      const [lastUrl, lastOptions] = calls[2];
+      expect(lastUrl.toString()).toBe("https://resource.example.com/.well-known/oauth-protected-resource");
+      expect(lastOptions.headers).toEqual({
+        "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION
+      });
+    });
+
+    it("does not fallback when resourceMetadataUrl is provided", async () => {
+      // Call with explicit URL returns 404
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      await expect(discoverOAuthProtectedResourceMetadata("https://resource.example.com/path", {
+        resourceMetadataUrl: "https://custom.example.com/metadata"
+      })).rejects.toThrow("Resource server does not implement OAuth 2.0 Protected Resource Metadata.");
+      
+      const calls = mockFetch.mock.calls;
+      expect(calls.length).toBe(1); // Should not attempt fallback when explicit URL is provided
+      
+      const [url] = calls[0];
+      expect(url.toString()).toBe("https://custom.example.com/metadata");
+    });
   });
 
   describe("discoverOAuthMetadata", () => {
