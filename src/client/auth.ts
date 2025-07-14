@@ -606,7 +606,7 @@ export async function discoverOAuthMetadata(
   protocolVersion ??= LATEST_PROTOCOL_VERSION;
 
   const response = await discoverMetadataWithFallback(
-    issuer,
+    authorizationServerUrl,
     'oauth-authorization-server',
     {
       protocolVersion,
