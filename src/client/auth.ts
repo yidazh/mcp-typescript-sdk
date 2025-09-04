@@ -12,7 +12,7 @@ import {
   OpenIdProviderDiscoveryMetadataSchema
 } from "../shared/auth.js";
 import { OAuthClientInformationFullSchema, OAuthMetadataSchema, OAuthProtectedResourceMetadataSchema, OAuthTokensSchema } from "../shared/auth.js";
-import { checkResourceAllowed, resourceUrlFromServerUrl } from "../shared/auth-utils.js";
+import { checkResourceAllowed, isMicrosoftEntraId, resourceUrlFromServerUrl } from "../shared/auth-utils.js";
 import {
   InvalidClientError,
   InvalidGrantError,
@@ -781,6 +781,11 @@ export async function discoverAuthorizationServerMetadata(
     } else {
       const metadata = OpenIdProviderDiscoveryMetadataSchema.parse(await response.json());
 
+      // check if the issuer is Microsoft Entra ID
+      if (isMicrosoftEntraId(metadata.issuer)) {
+        return metadata;
+      }
+
       // MCP spec requires OIDC providers to support S256 PKCE
       if (!metadata.code_challenge_methods_supported?.includes('S256')) {
         throw new Error(
@@ -830,8 +835,9 @@ export async function startAuthorization(
     }
 
     if (
-      !metadata.code_challenge_methods_supported ||
-      !metadata.code_challenge_methods_supported.includes(codeChallengeMethod)
+      !isMicrosoftEntraId(metadata.issuer) &&
+      (!metadata.code_challenge_methods_supported ||
+        !metadata.code_challenge_methods_supported.includes(codeChallengeMethod))
     ) {
       throw new Error(
         `Incompatible auth server: does not support code challenge method ${codeChallengeMethod}`,
@@ -870,7 +876,7 @@ export async function startAuthorization(
     authorizationUrl.searchParams.append("prompt", "consent");
   }
 
-  if (resource) {
+  if (resource && !isMicrosoftEntraId(authorizationServerUrl.toString())) {
     authorizationUrl.searchParams.set("resource", resource.href);
   }
 
@@ -948,7 +954,7 @@ export async function exchangeAuthorization(
     applyClientAuthentication(authMethod, clientInformation, headers, params);
   }
 
-  if (resource) {
+  if (resource && !isMicrosoftEntraId(authorizationServerUrl.toString())) {
     params.set("resource", resource.href);
   }
 
@@ -962,7 +968,19 @@ export async function exchangeAuthorization(
     throw await parseErrorResponse(response);
   }
 
-  return OAuthTokensSchema.parse(await response.json());
+  const res = await response.json()
+
+  if (isMicrosoftEntraId(authorizationServerUrl.toString())) {
+    const keys = ['expires_in', 'expires_on', 'ext_expires_in'];
+    keys.forEach(key => {
+      const value = res[key];
+      if (typeof value === 'string') {
+        res[key] = parseInt(value)
+      }
+    });
+  }
+
+  return OAuthTokensSchema.parse(res);
 }
 
 /**

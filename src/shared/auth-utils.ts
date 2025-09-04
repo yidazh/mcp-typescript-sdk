@@ -52,3 +52,13 @@ export function resourceUrlFromServerUrl(url: URL | string ): URL {
 
    return requestedPath.startsWith(configuredPath);
  }
+
+ /**
+  * Checks if a given URL is Microsoft Entra ID.
+  * 
+  * @param url - The URL to check
+  * @returns True if the issuer is Microsoft Entra ID, false otherwise
+  */
+ export function isMicrosoftEntraId(url: string): boolean {
+   return url.toLowerCase().startsWith('https://login.microsoftonline.com/') || url.toLowerCase().startsWith('https://sts.windows.net/');
+ }
