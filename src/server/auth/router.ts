@@ -185,7 +185,7 @@ export type AuthMetadataOptions = {
   resourceName?: string;
 }
 
-export function mcpAuthMetadataRouter(options: AuthMetadataOptions) {
+export function mcpAuthMetadataRouter(options: AuthMetadataOptions, path = '') {
   checkIssuerUrl(new URL(options.oauthMetadata.issuer));
 
   const router = express.Router();
@@ -202,10 +202,10 @@ export function mcpAuthMetadataRouter(options: AuthMetadataOptions) {
     resource_documentation: options.serviceDocumentationUrl?.href,
   };
 
-  router.use("/.well-known/oauth-protected-resource", metadataHandler(protectedResourceMetadata));
+  router.use(`/.well-known/oauth-protected-resource${path}`, metadataHandler(protectedResourceMetadata));
 
   // Always add this for backwards compatibility
-  router.use("/.well-known/oauth-authorization-server", metadataHandler(options.oauthMetadata));
+  router.use(`/.well-known/oauth-authorization-server${path}`, metadataHandler(options.oauthMetadata));
 
   return router;
 }
